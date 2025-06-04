@@ -1,12 +1,11 @@
 package kzg
 
-import "core:fmt"
 import "base:runtime"
-import win "core:sys/windows"
-import "core:mem"
-import dxgi "vendor:directx/dxgi"
-import ren "renderer_d3d12"
+import "core:fmt"
 import "core:log"
+import "core:mem"
+import ren "renderer_d3d12"
+import win "core:sys/windows"
 
 WINDOW_WIDTH :: 1280
 WINDOW_HEIGHT :: 720
@@ -95,6 +94,13 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 		ren.render_mesh(&cmdlist, &test_mesh)
 		ren.execute_command_list(&renderer, &cmdlist)
 		ren.present(&renderer, &swapchain)
+	case win.WM_SIZE:
+		if ren.valid(renderer) {
+			width := int(win.LOWORD(lparam))
+			height := int(win.HIWORD(lparam))
+			ren.destroy_swapchain(&swapchain)
+			swapchain = ren.create_swapchain(&renderer, hwnd, width, height)
+		}
 	}
 
 	return win.DefWindowProcW(hwnd, msg, wparam, lparam)

@@ -1,11 +1,11 @@
 package Renderer
 
-import d3d12 "vendor:directx/d3d12"
-import dxgi "vendor:directx/dxgi"
-import d3dc "vendor:directx/d3d_compiler"
-import win "core:sys/windows"
 import "core:log"
 import "core:mem"
+import d3d12 "vendor:directx/d3d12"
+import d3dc "vendor:directx/d3d_compiler"
+import dxgi "vendor:directx/dxgi"
+import win "core:sys/windows"
 
 NUM_RENDERTARGETS :: 2
 
@@ -53,6 +53,10 @@ Command_List :: struct {
 @private
 ensure_hr :: proc(res: win.HRESULT, message: string, loc := #caller_location) {
 	log.ensuref(res >= 0, "%v. Error code: %0x\n", message, u32(res), loc = loc)
+}
+
+valid :: proc(ren: Renderer) -> bool {
+	return ren.device != nil
 }
 
 create :: proc() -> Renderer {
