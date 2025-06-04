@@ -56,6 +56,7 @@ ensure_hr :: proc(res: win.HRESULT, message: string, loc := #caller_location) {
 }
 
 create :: proc() -> Renderer {
+	log.info("Creating D3D12 renderer.")
 	ren: Renderer
 	hr: win.HRESULT
 
@@ -94,7 +95,15 @@ create :: proc() -> Renderer {
 	return ren
 }
 
+destroy :: proc(ren: ^Renderer) {
+	log.info("Destroying D3D12 renderer.")
+	ren.command_queue->Release()
+	ren.device->Release()
+	ren.dxgi_factory->Release()
+}
+
 create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int) -> Swapchain {
+	log.infof("Creating swapchain with size %v x %v", width, height)
 	ensure(hwnd != nil, "Invalid window handle")
 	swap := Swapchain {
 		width = width,
@@ -167,6 +176,17 @@ create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int
 	}
 
 	return swap
+}
+
+destroy_swapchain :: proc(swap: ^Swapchain) {
+	for i in 0..<NUM_RENDERTARGETS {
+		swap.fences[i].fence->Release()
+		swap.command_allocators[i]->Release()
+		swap.targets[i]->Release()
+	}
+
+	swap.rtv_descriptor_heap->Release()
+	swap.swapchain->Release()
 }
 
 create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
@@ -285,7 +305,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 				Quality = 0,
 			},
 		}
-		
+
 		hr = ren.device->CreateGraphicsPipelineState(&pipeline_state_desc, d3d12.IPipelineState_UUID, (^rawptr)(&pip.pipeline))
 		ensure_hr(hr, "Pipeline creation failed")
 
@@ -303,6 +323,11 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 	}
 
 	return pip
+}
+
+destroy_pipeline :: proc(pip: ^Pipeline) {
+	pip.pipeline->Release()
+	pip.root_signature->Release()
 }
 
 create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
@@ -359,10 +384,35 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 	return m
 }
 
+destroy_mesh :: proc(m: Mesh) {
+	m.vertex_buffer->Release()
+}
+
 render_mesh :: proc(cmd: ^Command_List, m: ^Mesh) {
 	cmd.list->IASetPrimitiveTopology(.TRIANGLELIST)
 	cmd.list->IASetVertexBuffers(0, 1, &m.vertex_buffer_view)
 	cmd.list->DrawInstanced(3, 1, 0, 0)
+}
+
+begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
+	fence := &swap.fences[swap.frame_index]
+	current_fence_value := fence.value
+
+	hr: win.HRESULT
+	hr = ren.command_queue->Signal(fence.fence, current_fence_value)
+	ensure_hr(hr, "Failed to signal fence")
+
+	fence.value += 1
+	completed := fence.fence->GetCompletedValue()
+
+	if completed < current_fence_value {
+		hr = fence.fence->SetEventOnCompletion(current_fence_value, fence.event)
+		ensure_hr(hr, "Failed to set event on completion flag")
+		win.WaitForSingleObject(fence.event, win.INFINITE)
+	}
+
+	hr = swap.command_allocators[swap.frame_index]->Reset()
+	ensure_hr(hr, "Failed resetting command allocator")
 }
 
 create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
@@ -454,36 +504,9 @@ execute_command_list :: proc(ren: ^Renderer, cmd: ^Command_List) {
 }
 
 present :: proc(ren: ^Renderer, swap: ^Swapchain) {
-	hr: win.HRESULT
-
-	// present
-	{
-		flags: dxgi.PRESENT
-		params: dxgi.PRESENT_PARAMETERS
-		hr = swap.swapchain->Present1(1, flags, &params)
-		ensure_hr(hr, "Present failed")
-	}
-
-	// wait for frame to finish
-	{
-		fence := &swap.fences[swap.frame_index]
-		current_fence_value := fence.value
-
-		hr = ren.command_queue->Signal(fence.fence, current_fence_value)
-		ensure_hr(hr, "Failed to signal fence")
-
-		fence.value += 1
-		completed := fence.fence->GetCompletedValue()
-
-		if completed < current_fence_value {
-			hr = fence.fence->SetEventOnCompletion(current_fence_value, fence.event)
-			ensure_hr(hr, "Failed to set event on completion flag")
-			win.WaitForSingleObject(fence.event, win.INFINITE)
-		}
-
-		hr = swap.command_allocators[swap.frame_index]->Reset()
-		ensure_hr(hr, "Failed resetting command allocator")
-
-		swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
-	}		
+	flags: dxgi.PRESENT
+	params: dxgi.PRESENT_PARAMETERS
+	hr := swap.swapchain->Present1(1, flags, &params)
+	ensure_hr(hr, "Present failed")
+	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
 }

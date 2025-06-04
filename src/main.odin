@@ -68,15 +68,19 @@ float4 PSMain(PSInput input) : SV_TARGET {
 	swapchain = ren.create_swapchain(&renderer, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
 	test_mesh = ren.create_triangle_mesh(&renderer)
 	
-	// This fence is used to wait for frames to finish
-
-
 	msg: win.MSG
 
 	for win.GetMessageW(&msg, nil, 0, 0) > 0 {
 		win.TranslateMessage(&msg)
 		win.DispatchMessageW(&msg)
 	}
+
+	log.info("Shutting down...")
+	ren.destroy_mesh(test_mesh)
+	ren.destroy_swapchain(&swapchain)
+	ren.destroy_pipeline(&pipeline)
+	ren.destroy(&renderer)
+	log.info("Shutdown complete.")
 }
 
 window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM, lparam: win.LPARAM) -> win.LRESULT {
@@ -85,6 +89,7 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 	case win.WM_DESTROY:
 		win.PostQuitMessage(0)
 	case win.WM_PAINT:
+		ren.begin_frame(&renderer, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
 		ren.begin_render_pass(&cmdlist)
 		ren.render_mesh(&cmdlist, &test_mesh)
