@@ -5,7 +5,7 @@ import "base:runtime"
 import win "core:sys/windows"
 import "core:mem"
 import dxgi "vendor:directx/dxgi"
-import ren_d3d12 "renderer_d3d12"
+import ren "renderer_d3d12"
 import "core:log"
 
 WINDOW_WIDTH :: 1280
@@ -15,10 +15,10 @@ win32_hr_assert :: proc(res: win.HRESULT, message: string) {
 	fmt.assertf(res >= 0, "%v. Error code: %0x\n", message, u32(res))
 }
 
-renderer: ren_d3d12.Renderer
-pipeline: ren_d3d12.Pipeline
-swapchain: ren_d3d12.Swapchain
-test_mesh: ren_d3d12.Mesh
+renderer: ren.Renderer
+pipeline: ren.Pipeline
+swapchain: ren.Swapchain
+test_mesh: ren.Mesh
 custom_context: runtime.Context
 
 main :: proc() {
@@ -47,7 +47,7 @@ main :: proc() {
 
 	assert(hwnd != nil, "win: Window creation failed")
 
-	renderer = ren_d3d12.create()
+	renderer = ren.create()
 
 	shader :=
 `struct PSInput {
@@ -64,9 +64,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
 	return input.color;
 };`
 
-	pipeline = ren_d3d12.create_pipeline(&renderer, shader)
-	swapchain = ren_d3d12.create_swapchain(&renderer, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
-	test_mesh = ren_d3d12.create_triangle_mesh(&renderer)
+	pipeline = ren.create_pipeline(&renderer, shader)
+	swapchain = ren.create_swapchain(&renderer, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
+	test_mesh = ren.create_triangle_mesh(&renderer)
 	
 	// This fence is used to wait for frames to finish
 
@@ -85,7 +85,11 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 	case win.WM_DESTROY:
 		win.PostQuitMessage(0)
 	case win.WM_PAINT:
-		ren_d3d12.render_mesh(&renderer, &pipeline, &swapchain, &test_mesh)
+		cmdlist := ren.create_command_list(&pipeline, &swapchain)
+		ren.begin_render_pass(&cmdlist)
+		ren.render_mesh(&cmdlist, &test_mesh)
+		ren.execute_command_list(&renderer, &cmdlist)
+		ren.present(&renderer, &swapchain)
 	}
 
 	return win.DefWindowProcW(hwnd, msg, wparam, lparam)

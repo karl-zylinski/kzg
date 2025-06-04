@@ -19,20 +19,23 @@ Swapchain :: struct {
 	swapchain: ^dxgi.ISwapChain3,
 	rtv_descriptor_heap: ^d3d12.IDescriptorHeap,
 	targets: [NUM_RENDERTARGETS]^d3d12.IResource,
+	command_allocators: [NUM_RENDERTARGETS]^d3d12.ICommandAllocator,
+	fences: [NUM_RENDERTARGETS]Fence,
 	frame_index: u32,
 	width: int,
 	height: int,
 }
 
-Pipeline :: struct {
-	pipeline: ^d3d12.IPipelineState,
-	command_allocator: ^d3d12.ICommandAllocator,
-	cmdlist: ^d3d12.IGraphicsCommandList,
-	root_signature: ^d3d12.IRootSignature,
-
+Fence :: struct {
 	fence: ^d3d12.IFence,
-	fence_value: u64,
-	fence_event: win.HANDLE,
+	value: u64,
+	event: win.HANDLE,	
+}
+
+Pipeline :: struct {
+	device: ^d3d12.IDevice,
+	pipeline: ^d3d12.IPipelineState,
+	root_signature: ^d3d12.IRootSignature,
 }
 
 Mesh :: struct {
@@ -40,9 +43,16 @@ Mesh :: struct {
 	vertex_buffer_view: d3d12.VERTEX_BUFFER_VIEW,
 }
 
+Command_List :: struct {
+	swapchain: ^Swapchain,
+	pipeline: ^Pipeline,
+	command_allocator: ^d3d12.ICommandAllocator,
+	list: ^d3d12.IGraphicsCommandList,
+}
+
 @private
-ensure_hr :: proc(res: win.HRESULT, message: string) {
-	log.ensuref(res >= 0, "%v. Error code: %0x\n", message, u32(res))
+ensure_hr :: proc(res: win.HRESULT, message: string, loc := #caller_location) {
+	log.ensuref(res >= 0, "%v. Error code: %0x\n", message, u32(res), loc = loc)
 }
 
 create :: proc() -> Renderer {
@@ -141,18 +151,30 @@ create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int
 		}
 	}
 
+	{
+		for i in 0..<NUM_RENDERTARGETS {
+			hr = ren.device->CreateCommandAllocator(.DIRECT, d3d12.ICommandAllocator_UUID, (^rawptr)(&swap.command_allocators[i]))
+			ensure_hr(hr, "Failed creating command allocator")
+
+			hr = ren.device->CreateFence(0, {}, d3d12.IFence_UUID, (^rawptr)(&swap.fences[i].fence))
+			ensure_hr(hr, "Failed to create fence")
+			swap.fences[i].value += 1
+			manual_reset: win.BOOL = false
+			initial_state: win.BOOL = false
+			swap.fences[i].event = win.CreateEventW(nil, manual_reset, initial_state, nil)
+			assert(swap.fences[i].event != nil, "Failed to create fence event")
+		}
+	}
+
 	return swap
 }
 
 create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 	hr: win.HRESULT
-	pip: Pipeline
-	
-	{
-		hr = ren.device->CreateCommandAllocator(.DIRECT, d3d12.ICommandAllocator_UUID, (^rawptr)(&pip.command_allocator))
-		ensure_hr(hr, "Failed creating command allocator")
+	pip := Pipeline {
+		device = ren.device,
 	}
-
+	
 	{
 		desc := d3d12.VERSIONED_ROOT_SIGNATURE_DESC {
 			Version = ._1_0,
@@ -271,21 +293,6 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		ps->Release()
 	}
 
-	hr = ren.device->CreateCommandList(0, .DIRECT, pip.command_allocator, pip.pipeline, d3d12.ICommandList_UUID, (^rawptr)(&pip.cmdlist))
-	ensure_hr(hr, "Failed to create command list")
-	hr = pip.cmdlist->Close()
-	ensure_hr(hr, "Failed to close command list")
-
-	{
-		hr = ren.device->CreateFence(pip.fence_value, {}, d3d12.IFence_UUID, (^rawptr)(&pip.fence))
-		ensure_hr(hr, "Failed to create fence")
-		pip.fence_value += 1
-		manual_reset: win.BOOL = false
-		initial_state: win.BOOL = false
-		pip.fence_event = win.CreateEventW(nil, manual_reset, initial_state, nil)
-		assert(pip.fence_event != nil, "Failed to create fence event")
-	}
-
 	{
 		desc := d3d12.COMMAND_QUEUE_DESC {
 			Type = .DIRECT,
@@ -352,13 +359,33 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 	return m
 }
 
-render_mesh :: proc(ren: ^Renderer, pip: ^Pipeline, swap: ^Swapchain, m: ^Mesh) {
-	hr: win.HRESULT
-	hr = pip.command_allocator->Reset()
-	ensure_hr(hr, "Failed resetting command allocator")
+render_mesh :: proc(cmd: ^Command_List, m: ^Mesh) {
+	cmd.list->IASetPrimitiveTopology(.TRIANGLELIST)
+	cmd.list->IASetVertexBuffers(0, 1, &m.vertex_buffer_view)
+	cmd.list->DrawInstanced(3, 1, 0, 0)
+}
 
-	hr = pip.cmdlist->Reset(pip.command_allocator, pip.pipeline)
+create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
+	alloc := swap.command_allocators[swap.frame_index]
+	cmd := Command_List {
+		swapchain = swap,
+		command_allocator = alloc,
+		pipeline = pip,
+	}
+	hr: win.HRESULT
+	hr = pip.device->CreateCommandList(0, .DIRECT, alloc, pip.pipeline, d3d12.ICommandList_UUID, (^rawptr)(&cmd.list))
+	ensure_hr(hr, "Failed to create command list")
+	hr = cmd.list->Close()
+	ensure_hr(hr, "Failed to close command list")
+	return cmd
+}
+
+begin_render_pass :: proc(cmd: ^Command_List) {
+	hr: win.HRESULT
+	hr = cmd.list->Reset(cmd.command_allocator, cmd.pipeline.pipeline)
 	ensure_hr(hr, "Failed to reset command list")
+	swap := cmd.swapchain
+	pip := cmd.pipeline
 
 	viewport := d3d12.VIEWPORT {
 		Width = f32(swap.width),
@@ -370,9 +397,9 @@ render_mesh :: proc(ren: ^Renderer, pip: ^Pipeline, swap: ^Swapchain, m: ^Mesh) 
 		top = 0, bottom = i32(swap.height),
 	}
 
-	pip.cmdlist->SetGraphicsRootSignature(pip.root_signature)
-	pip.cmdlist->RSSetViewports(1, &viewport)
-	pip.cmdlist->RSSetScissorRects(1, &scissor_rect)
+	cmd.list->SetGraphicsRootSignature(pip.root_signature)
+	cmd.list->RSSetViewports(1, &viewport)
+	cmd.list->RSSetScissorRects(1, &scissor_rect)
 
 	to_render_target_barrier := d3d12.RESOURCE_BARRIER {
 		Type = .TRANSITION,
@@ -386,39 +413,48 @@ render_mesh :: proc(ren: ^Renderer, pip: ^Pipeline, swap: ^Swapchain, m: ^Mesh) 
 		Subresource = d3d12.RESOURCE_BARRIER_ALL_SUBRESOURCES,
 	}
 
-	pip.cmdlist->ResourceBarrier(1, &to_render_target_barrier)
+	cmd.list->ResourceBarrier(1, &to_render_target_barrier)
+
 
 	rtv_handle: d3d12.CPU_DESCRIPTOR_HANDLE
 	swap.rtv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&rtv_handle)
 
 	if swap.frame_index > 0 {
-		s := ren.device->GetDescriptorHandleIncrementSize(.RTV)
+		s := pip.device->GetDescriptorHandleIncrementSize(.RTV)
 		rtv_handle.ptr += uint(swap.frame_index * s)
 	}
 
-	pip.cmdlist->OMSetRenderTargets(1, &rtv_handle, false, nil)
+	cmd.list->OMSetRenderTargets(1, &rtv_handle, false, nil)
 
 	// clear backbuffer
 	clearcolor := [?]f32 { 0.05, 0.05, 0.05, 1.0 }
-	pip.cmdlist->ClearRenderTargetView(rtv_handle, &clearcolor, 0, nil)
+	cmd.list->ClearRenderTargetView(rtv_handle, &clearcolor, 0, nil)
+}
 
-	// draw call
-	pip.cmdlist->IASetPrimitiveTopology(.TRIANGLELIST)
-	pip.cmdlist->IASetVertexBuffers(0, 1, &m.vertex_buffer_view)
-	pip.cmdlist->DrawInstanced(3, 1, 0, 0)
-	
-	to_present_barrier := to_render_target_barrier
-	to_present_barrier.Transition.StateBefore = {.RENDER_TARGET}
-	to_present_barrier.Transition.StateAfter = d3d12.RESOURCE_STATE_PRESENT
+execute_command_list :: proc(ren: ^Renderer, cmd: ^Command_List) {
+	hr: win.HRESULT
 
-	pip.cmdlist->ResourceBarrier(1, &to_present_barrier)
+	to_present_barrier := d3d12.RESOURCE_BARRIER {
+		Type = .TRANSITION,
+		Flags = {},
+		Transition = {
+			pResource = cmd.swapchain.targets[cmd.swapchain.frame_index],
+			StateBefore = {.RENDER_TARGET},
+			StateAfter = d3d12.RESOURCE_STATE_PRESENT,
+			Subresource = d3d12.RESOURCE_BARRIER_ALL_SUBRESOURCES,	
+		}
+	}
 
-	hr = pip.cmdlist->Close()
+	cmd.list->ResourceBarrier(1, &to_present_barrier)
+
+	hr = cmd.list->Close()
 	ensure_hr(hr, "Failed to close command list")
-
-	// execute
-	cmdlists := [?]^d3d12.IGraphicsCommandList { pip.cmdlist }
+	cmdlists := [?]^d3d12.IGraphicsCommandList { cmd.list }
 	ren.command_queue->ExecuteCommandLists(len(cmdlists), (^^d3d12.ICommandList)(&cmdlists[0]))
+}
+
+present :: proc(ren: ^Renderer, swap: ^Swapchain) {
+	hr: win.HRESULT
 
 	// present
 	{
@@ -430,19 +466,23 @@ render_mesh :: proc(ren: ^Renderer, pip: ^Pipeline, swap: ^Swapchain, m: ^Mesh) 
 
 	// wait for frame to finish
 	{
-		current_fence_value := pip.fence_value
+		fence := &swap.fences[swap.frame_index]
+		current_fence_value := fence.value
 
-		hr = ren.command_queue->Signal(pip.fence, current_fence_value)
+		hr = ren.command_queue->Signal(fence.fence, current_fence_value)
 		ensure_hr(hr, "Failed to signal fence")
 
-		pip.fence_value += 1
-		completed := pip.fence->GetCompletedValue()
+		fence.value += 1
+		completed := fence.fence->GetCompletedValue()
 
 		if completed < current_fence_value {
-			hr = pip.fence->SetEventOnCompletion(current_fence_value, pip.fence_event)
+			hr = fence.fence->SetEventOnCompletion(current_fence_value, fence.event)
 			ensure_hr(hr, "Failed to set event on completion flag")
-			win.WaitForSingleObject(pip.fence_event, win.INFINITE)
+			win.WaitForSingleObject(fence.event, win.INFINITE)
 		}
+
+		hr = swap.command_allocators[swap.frame_index]->Reset()
+		ensure_hr(hr, "Failed resetting command allocator")
 
 		swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
 	}		
