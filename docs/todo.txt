@@ -1,1 +1,1 @@
-add mvp constant buffer and make triangle rotate / movable: https://paminerva.github.io/LearnDirectX/Tutorials/01-HelloDirectX/hello-cbs.html
+is it only presenting first frame? Is the fence wrong? Or something else with the swapchain?

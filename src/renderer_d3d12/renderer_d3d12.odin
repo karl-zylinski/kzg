@@ -6,6 +6,9 @@ import d3d12 "vendor:directx/d3d12"
 import d3dc "vendor:directx/d3d_compiler"
 import dxgi "vendor:directx/dxgi"
 import win "core:sys/windows"
+import "core:slice"
+import "core:time"
+import "core:math"
 
 NUM_RENDERTARGETS :: 2
 
@@ -36,6 +39,10 @@ Pipeline :: struct {
 	device: ^d3d12.IDevice,
 	pipeline: ^d3d12.IPipelineState,
 	root_signature: ^d3d12.IRootSignature,
+	cbv_descriptor_heap: ^d3d12.IDescriptorHeap,
+
+	constant_buffer_res: ^d3d12.IResource,
+	constant_buffer_start: rawptr,
 }
 
 Mesh :: struct {
@@ -193,6 +200,11 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 	swap.swapchain->Release()
 }
 
+Constant_Buffer :: struct {
+	offset: [4]f32,
+	padding: [60]f32,
+}
+
 create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 	hr: win.HRESULT
 	pip := Pipeline {
@@ -205,12 +217,46 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		}
 
 		desc.Desc_1_0.Flags = {.ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT}
+
+		descriptor_ranges := [?]d3d12.DESCRIPTOR_RANGE {
+			{
+				RangeType = .CBV,
+				BaseShaderRegister = 0,
+				NumDescriptors = 1,
+				RegisterSpace = 0,
+				OffsetInDescriptorsFromTableStart = 0,
+			}
+		}
+
+		root_parameters := [?]d3d12.ROOT_PARAMETER {
+			{
+				ParameterType = .DESCRIPTOR_TABLE,
+				ShaderVisibility = .ALL,
+				DescriptorTable = {
+					NumDescriptorRanges = 1,
+					pDescriptorRanges = raw_data(&descriptor_ranges)
+				}
+			}
+		}
+
+		desc.Desc_1_0.pParameters = raw_data(&root_parameters)
+		desc.Desc_1_0.NumParameters = 1
 		serialized_desc: ^d3d12.IBlob
 		ser_root_sig_hr := d3d12.SerializeVersionedRootSignature(&desc, &serialized_desc, nil)
 		ensure_hr(ser_root_sig_hr, "Failed to serialize root signature")
 		root_sig_hr := ren.device->CreateRootSignature(0, serialized_desc->GetBufferPointer(), serialized_desc->GetBufferSize(), d3d12.IRootSignature_UUID, (^rawptr)(&pip.root_signature))
 		ensure_hr(root_sig_hr, "Failed creating root signature")
 		serialized_desc->Release()
+	}
+
+	{
+		cbv_heap_desc := d3d12.DESCRIPTOR_HEAP_DESC {
+			NumDescriptors = 1,
+			Flags = { .SHADER_VISIBLE },
+			Type = .CBV_SRV_UAV,
+		}
+		hr = ren.device->CreateDescriptorHeap(&cbv_heap_desc, d3d12.IDescriptorHeap_UUID, (^rawptr)(&pip.cbv_descriptor_heap))
+		ensure_hr(hr, "Failed c reating constant buffer descriptor heap.")
 	}
 
 
@@ -326,6 +372,43 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		ensure_hr(hr, "Failed creating D3D12 command queue")
 	}
 
+	{
+		cb_size := size_of(Constant_Buffer)
+
+		buffer_desc := d3d12.RESOURCE_DESC {
+			Dimension = .BUFFER,
+			Width = u64(cb_size),
+			Height = 1,
+			DepthOrArraySize = 1,
+			MipLevels = 1,
+			SampleDesc = { Count = 1, Quality = 0, },
+			Layout = .ROW_MAJOR,
+		}
+
+		hr = ren.device->CreateCommittedResource(
+			&d3d12.HEAP_PROPERTIES { Type = .UPLOAD },
+			{},
+			&buffer_desc,
+			d3d12.RESOURCE_STATE_GENERIC_READ,
+			nil,
+			d3d12.IResource_UUID,
+			(^rawptr)(&pip.constant_buffer_res),
+		)
+
+		ensure_hr(hr, "Failed creating constant buffer resource")
+
+		cbv_desc := d3d12.CONSTANT_BUFFER_VIEW_DESC {
+			BufferLocation = pip.constant_buffer_res->GetGPUVirtualAddress(),
+			SizeInBytes = u32(cb_size),
+		}
+
+		handle: d3d12.CPU_DESCRIPTOR_HANDLE
+		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
+		ren.device->CreateConstantBufferView(&cbv_desc, handle)
+		hr = pip.constant_buffer_res->Map(0, &d3d12.RANGE{}, (^rawptr)(&pip.constant_buffer_start))
+		ensure_hr(hr, "Failed mapping cb")
+	}
+
 	return pip
 }
 
@@ -434,6 +517,8 @@ create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
 	return cmd
 }
 
+t: f32
+
 begin_render_pass :: proc(cmd: ^Command_List) {
 	hr: win.HRESULT
 	hr = cmd.list->Reset(cmd.command_allocator, cmd.pipeline.pipeline)
@@ -451,7 +536,28 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 		top = 0, bottom = i32(swap.height),
 	}
 
+	t += 0.01
+
+	bob := Constant_Buffer {
+		offset = {math.cos(t), 0, 0, 0}
+	}
+
+	mem.copy(pip.constant_buffer_start, &bob, size_of(bob))
+
 	cmd.list->SetGraphicsRootSignature(pip.root_signature)
+	heaps := [?]^d3d12.IDescriptorHeap {
+		pip.cbv_descriptor_heap,
+	}
+
+
+	cmd.list->SetDescriptorHeaps(1, raw_data(&heaps))
+
+
+	table_handle: d3d12.GPU_DESCRIPTOR_HANDLE
+	cmd.pipeline.cbv_descriptor_heap->GetGPUDescriptorHandleForHeapStart(&table_handle)
+	cmd.list->SetGraphicsRootDescriptorTable(0, table_handle)
+
+
 	cmd.list->RSSetViewports(1, &viewport)
 	cmd.list->RSSetScissorRects(1, &scissor_rect)
 
