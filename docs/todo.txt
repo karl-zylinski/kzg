@@ -1,1 +1,2 @@
-is it only presenting first frame? Is the fence wrong? Or something else with the swapchain?
+make some kind of buffer for UI elements and index it in shader
+- How to cast to arbitrary data in shader? Can I cast at an offset in an array to a struct type?
