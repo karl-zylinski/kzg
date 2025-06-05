@@ -52,6 +52,9 @@ Pipeline :: struct {
 Mesh :: struct {
 	vertex_buffer: ^d3d12.IResource,
 	vertex_buffer_view: d3d12.VERTEX_BUFFER_VIEW,
+
+	index_buffer: ^d3d12.IResource,
+	index_buffer_view: d3d12.INDEX_BUFFER_VIEW,
 }
 
 Command_List :: struct {
@@ -425,49 +428,96 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 	hr: win.HRESULT
 
 	{
-		// The position and color data for the triangle's vertices go together per-vertex
-		vertices := [?]f32 {
-			// pos            color
-			 0.0 , 0.5, 0.0,  1,0,0,0,
-			 0.5, -0.5, 0.0,  0,1,0,0,
-			-0.5, -0.5, 0.0,  0,0,1,0,
+		{
+			heap_props := d3d12.HEAP_PROPERTIES {
+				Type = .UPLOAD,
+			}
+
+			// The position and color data for the triangle's vertices go together per-vertex
+			vertices := [?]f32 {
+				// pos            color
+				0.0, 0, 0.0,  1,0,0,0,
+				200, 0, 0.0,  0,1,0,0,
+				200, 200, 0.0,  0,0,1,0,
+	 			0, 200, 0.0,  0, 0,1,0,
+			}
+
+			vertex_buffer_size := len(vertices) * size_of(vertices[0])
+
+			resource_desc := d3d12.RESOURCE_DESC {
+				Dimension = .BUFFER,
+				Alignment = 0,
+				Width = u64(vertex_buffer_size),
+				Height = 1,
+				DepthOrArraySize = 1,
+				MipLevels = 1,
+				Format = .UNKNOWN,
+				SampleDesc = { Count = 1, Quality = 0 },
+				Layout = .ROW_MAJOR,
+				Flags = {},
+			}
+
+			hr = ren.device->CreateCommittedResource(&heap_props, {}, &resource_desc, d3d12.RESOURCE_STATE_GENERIC_READ, nil, d3d12.IResource_UUID, (^rawptr)(&m.vertex_buffer))
+			ensure_hr(hr, "Failed creating vertex buffer")
+
+			gpu_data: rawptr
+			read_range: d3d12.RANGE
+
+			hr = m.vertex_buffer->Map(0, &read_range, &gpu_data)
+			ensure_hr(hr, "Failed creating verex buffer resource")
+
+			mem.copy(gpu_data, &vertices[0], vertex_buffer_size)
+			m.vertex_buffer->Unmap(0, nil)
+
+			m.vertex_buffer_view = d3d12.VERTEX_BUFFER_VIEW {
+				BufferLocation = m.vertex_buffer->GetGPUVirtualAddress(),
+				StrideInBytes = u32(vertex_buffer_size/4),
+				SizeInBytes = u32(vertex_buffer_size),
+			}
 		}
 
-		heap_props := d3d12.HEAP_PROPERTIES {
-			Type = .UPLOAD,
-		}
+		{
+			heap_props := d3d12.HEAP_PROPERTIES {
+				Type = .UPLOAD,
+			}
 
-		vertex_buffer_size := len(vertices) * size_of(vertices[0])
+			indices := [?]u32 {
+				0, 1, 2,
+				0, 2, 3,
+			}
 
-		resource_desc := d3d12.RESOURCE_DESC {
-			Dimension = .BUFFER,
-			Alignment = 0,
-			Width = u64(vertex_buffer_size),
-			Height = 1,
-			DepthOrArraySize = 1,
-			MipLevels = 1,
-			Format = .UNKNOWN,
-			SampleDesc = { Count = 1, Quality = 0 },
-			Layout = .ROW_MAJOR,
-			Flags = {},
-		}
+			buffer_size := len(indices) * size_of(indices[0])
 
-		hr = ren.device->CreateCommittedResource(&heap_props, {}, &resource_desc, d3d12.RESOURCE_STATE_GENERIC_READ, nil, d3d12.IResource_UUID, (^rawptr)(&m.vertex_buffer))
-		ensure_hr(hr, "Failed creating vertex buffer")
+			resource_desc := d3d12.RESOURCE_DESC {
+				Dimension = .BUFFER,
+				Alignment = 0,
+				Width = u64(buffer_size),
+				Height = 1,
+				DepthOrArraySize = 1,
+				MipLevels = 1,
+				Format = .UNKNOWN,
+				SampleDesc = { Count = 1, Quality = 0 },
+				Layout = .ROW_MAJOR,
+				Flags = {},
+			}
 
-		gpu_data: rawptr
-		read_range: d3d12.RANGE
+			hr = ren.device->CreateCommittedResource(&heap_props, {}, &resource_desc, d3d12.RESOURCE_STATE_GENERIC_READ, nil, d3d12.IResource_UUID, (^rawptr)(&m.index_buffer))
+			ensure_hr(hr, "Failed creating index buffer")
 
-		hr = m.vertex_buffer->Map(0, &read_range, &gpu_data)
-		ensure_hr(hr, "Failed creating verex buffer resource")
+			gpu_data: rawptr
+			read_range: d3d12.RANGE
 
-		mem.copy(gpu_data, &vertices[0], vertex_buffer_size)
-		m.vertex_buffer->Unmap(0, nil)
+			hr = m.index_buffer->Map(0, &read_range, &gpu_data)
+			ensure_hr(hr, "Failed creating index buffer resource")
 
-		m.vertex_buffer_view = d3d12.VERTEX_BUFFER_VIEW {
-			BufferLocation = m.vertex_buffer->GetGPUVirtualAddress(),
-			StrideInBytes = u32(vertex_buffer_size/3),
-			SizeInBytes = u32(vertex_buffer_size),
+			mem.copy(gpu_data, &indices[0], buffer_size)
+			m.index_buffer->Unmap(0, nil)
+
+			m.index_buffer_view = d3d12.INDEX_BUFFER_VIEW {
+				BufferLocation = m.index_buffer->GetGPUVirtualAddress(),
+				SizeInBytes = u32(buffer_size),
+				Format = .R32_UINT,
+			}
 		}
 	}
 
@@ -481,7 +531,8 @@ destroy_mesh :: proc(m: Mesh) {
 render_mesh :: proc(cmd: ^Command_List, m: ^Mesh) {
 	cmd.list->IASetPrimitiveTopology(.TRIANGLELIST)
 	cmd.list->IASetVertexBuffers(0, 1, &m.vertex_buffer_view)
-	cmd.list->DrawInstanced(3, 1, 0, 0)
+	cmd.list->IASetIndexBuffer(&m.index_buffer_view)
+	cmd.list->DrawIndexedInstanced(6, 1, 0, 0, 0)
 }
 
 begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
@@ -541,8 +592,13 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 
 	t += 0.01
 
+	sw := f32(swap.width)
+	sh := f32(swap.height)
+
+	mvp := la.matrix4_scale(Vec3{2.0/sw, -2.0/sh, 1}) * la.matrix4_translate(Vec3{-sw/2, -sh/2, 0})
+
 	bob := Constant_Buffer {
-		mvp = la.transpose(la.matrix4_rotate(t, Vec3{0, 0, 1}))
+		mvp = la.transpose(mvp)
 	}
 
 	mem.copy(pip.constant_buffer_start, &bob, size_of(bob))
@@ -552,14 +608,10 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 		pip.cbv_descriptor_heap,
 	}
 
-
 	cmd.list->SetDescriptorHeaps(1, raw_data(&heaps))
-
-
 	table_handle: d3d12.GPU_DESCRIPTOR_HANDLE
 	cmd.pipeline.cbv_descriptor_heap->GetGPUDescriptorHandleForHeapStart(&table_handle)
 	cmd.list->SetGraphicsRootDescriptorTable(0, table_handle)
-
 
 	cmd.list->RSSetViewports(1, &viewport)
 	cmd.list->RSSetScissorRects(1, &scissor_rect)

@@ -50,24 +50,7 @@ main :: proc() {
 
 	renderer = ren.create()
 
-	shader :=
-`
-cbuffer ConstantBuffers : register(b0) {
-	float4x4 mvp;
-};
-struct PSInput {
-	float4 position : SV_POSITION;
-	float4 color : COLOR;
-};
-PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0) {
-	PSInput result;
-	result.position = mul(position, mvp);
-	result.color = color;
-	return result;
-}
-float4 PSMain(PSInput input) : SV_TARGET {
-	return input.color;
-};`
+	shader := string(#load("shader.hlsl"))
 
 	pipeline = ren.create_pipeline(&renderer, shader)
 	swapchain = ren.create_swapchain(&renderer, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
