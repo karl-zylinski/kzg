@@ -9,8 +9,12 @@ import win "core:sys/windows"
 import "core:slice"
 import "core:time"
 import "core:math"
+import la "core:math/linalg"
 
 NUM_RENDERTARGETS :: 2
+
+Mat4 :: matrix[4,4]f32
+Vec3 :: [3]f32
 
 Renderer :: struct {
 	device: ^d3d12.IDevice,
@@ -200,9 +204,8 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 	swap.swapchain->Release()
 }
 
-Constant_Buffer :: struct {
-	offset: [4]f32,
-	padding: [60]f32,
+Constant_Buffer :: struct #align(256){
+	mvp: matrix[4, 4]f32,
 }
 
 create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
@@ -539,7 +542,7 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 	t += 0.01
 
 	bob := Constant_Buffer {
-		offset = {math.cos(t), 0, 0, 0}
+		mvp = la.transpose(la.matrix4_rotate(t, Vec3{0, 0, 1}))
 	}
 
 	mem.copy(pip.constant_buffer_start, &bob, size_of(bob))

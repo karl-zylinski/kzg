@@ -14,6 +14,7 @@ win32_hr_assert :: proc(res: win.HRESULT, message: string) {
 	fmt.assertf(res >= 0, "%v. Error code: %0x\n", message, u32(res))
 }
 
+run: bool
 renderer: ren.Renderer
 pipeline: ren.Pipeline
 swapchain: ren.Swapchain
@@ -21,6 +22,7 @@ test_mesh: ren.Mesh
 custom_context: runtime.Context
 
 main :: proc() {
+	run = true
 	context.logger = log.create_console_logger()
 	custom_context = context
 	instance := win.HINSTANCE(win.GetModuleHandleW(nil))
@@ -51,7 +53,7 @@ main :: proc() {
 	shader :=
 `
 cbuffer ConstantBuffers : register(b0) {
-	float4 offset;
+	float4x4 mvp;
 };
 struct PSInput {
 	float4 position : SV_POSITION;
@@ -59,7 +61,7 @@ struct PSInput {
 };
 PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0) {
 	PSInput result;
-	result.position = position + offset;
+	result.position = mul(position, mvp);
 	result.color = color;
 	return result;
 }
@@ -73,9 +75,18 @@ float4 PSMain(PSInput input) : SV_TARGET {
 	
 	msg: win.MSG
 
-	for win.GetMessageW(&msg, nil, 0, 0) > 0 {
-		win.TranslateMessage(&msg)
-		win.DispatchMessageW(&msg)
+	for run {
+		for win.PeekMessageW(&msg, nil, 0, 0, win.PM_REMOVE) {
+			win.TranslateMessage(&msg)
+			win.DispatchMessageW(&msg)			
+		} 
+
+		ren.begin_frame(&renderer, &swapchain)
+		cmdlist := ren.create_command_list(&pipeline, &swapchain)
+		ren.begin_render_pass(&cmdlist)
+		ren.render_mesh(&cmdlist, &test_mesh)
+		ren.execute_command_list(&renderer, &cmdlist)
+		ren.present(&renderer, &swapchain)
 	}
 
 	log.info("Shutting down...")
@@ -91,13 +102,7 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 	switch msg {
 	case win.WM_DESTROY:
 		win.PostQuitMessage(0)
-	case win.WM_PAINT:
-		ren.begin_frame(&renderer, &swapchain)
-		cmdlist := ren.create_command_list(&pipeline, &swapchain)
-		ren.begin_render_pass(&cmdlist)
-		ren.render_mesh(&cmdlist, &test_mesh)
-		ren.execute_command_list(&renderer, &cmdlist)
-		ren.present(&renderer, &swapchain)
+		run = false
 	case win.WM_SIZE:
 		if ren.valid(renderer) {
 			width := int(win.LOWORD(lparam))
