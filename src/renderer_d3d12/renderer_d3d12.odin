@@ -209,6 +209,7 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 
 Constant_Buffer :: struct #align(256){
 	mvp: matrix[4, 4]f32,
+	nums: [64]f32,
 }
 
 create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
@@ -483,7 +484,7 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 
 			indices := [?]u32 {
 				0, 1, 2,
-				0, 2, 3,
+				0, 2, 10,
 			}
 
 			buffer_size := len(indices) * size_of(indices[0])
@@ -598,7 +599,10 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 	mvp := la.matrix4_scale(Vec3{2.0/sw, -2.0/sh, 1}) * la.matrix4_translate(Vec3{-sw/2, -sh/2, 0})
 
 	bob := Constant_Buffer {
-		mvp = la.transpose(mvp)
+		mvp = la.transpose(mvp),
+		nums = {
+			0 = 400,
+		}
 	}
 
 	mem.copy(pip.constant_buffer_start, &bob, size_of(bob))
