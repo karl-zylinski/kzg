@@ -3,12 +3,12 @@ cbuffer ConstantBuffers : register(b0) {
 	float nums[64];
 };
 
-/*struct UI_Element {
+struct UI_Element {
 	float2 pos;
 	float2 size;
-};*/
+};
 
-//ConstantBuffer<UI_Element> ui_elements : register(b1);
+StructuredBuffer<UI_Element> ui_elements : register(t0);
 
 struct PSInput {
 	float4 position : SV_POSITION;
