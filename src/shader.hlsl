@@ -2,6 +2,14 @@ cbuffer ConstantBuffers : register(b0) {
 	float4x4 mvp;
 	float nums[64];
 };
+
+/*struct UI_Element {
+	float2 pos;
+	float2 size;
+};*/
+
+//ConstantBuffer<UI_Element> ui_elements : register(b1);
+
 struct PSInput {
 	float4 position : SV_POSITION;
 	float4 color : COLOR;

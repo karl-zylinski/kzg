@@ -3,13 +3,14 @@ package Renderer
 import "core:log"
 import "core:mem"
 import d3d12 "vendor:directx/d3d12"
-import d3dc "vendor:directx/d3d_compiler"
+import "vendor:directx/dxc"
 import dxgi "vendor:directx/dxgi"
 import win "core:sys/windows"
 import "core:slice"
 import "core:time"
 import "core:math"
 import la "core:math/linalg"
+import "core:strings"
 
 NUM_RENDERTARGETS :: 2
 
@@ -20,6 +21,11 @@ Renderer :: struct {
 	device: ^d3d12.IDevice,
 	dxgi_factory: ^dxgi.IFactory4,
 	command_queue: ^d3d12.ICommandQueue,
+	info_queue: ^d3d12.IInfoQueue,
+	debug: ^d3d12.IDebug,
+
+	dxc_library: ^dxc.ILibrary,
+	dxc_compiler: ^dxc.ICompiler,
 }
 
 Swapchain :: struct {
@@ -78,6 +84,13 @@ create :: proc() -> Renderer {
 	ren: Renderer
 	hr: win.HRESULT
 
+	when ODIN_DEBUG {
+		hr = d3d12.GetDebugInterface(d3d12.IDebug_UUID, (^rawptr)(&ren.debug))
+
+		check(hr, ren.info_queue, "Failed creating debug interface")
+		ren.debug->EnableDebugLayer()
+	}
+
 	{
 		flags: dxgi.CREATE_FACTORY
 
@@ -110,8 +123,47 @@ create :: proc() -> Renderer {
 	hr = d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice_UUID, (^rawptr)(&ren.device))
 	ensure_hr(hr, "Failed to creating D3D12 device")
 
+	when ODIN_DEBUG {
+		hr = ren.device->QueryInterface(d3d12.IInfoQueue_UUID, (^rawptr)(&ren.info_queue))
+		ensure_hr(hr, "Failed getting info queue")
+	}
+
+	// DXC
+	{
+		hr = dxc.CreateInstance(dxc.Library_CLSID, dxc.ILibrary_UUID, (^rawptr)(&ren.dxc_library))
+		check(hr, ren.info_queue, "Failed to create DXC library")
+		hr = dxc.CreateInstance(dxc.Compiler_CLSID, dxc.ICompiler_UUID, (^rawptr)(&ren.dxc_compiler))
+		check(hr, ren.info_queue, "Failed to create DXC compiler")
+	}
+
 	return ren
 }
+
+check :: proc(res: d3d12.HRESULT, iq: ^d3d12.IInfoQueue, message: string) {
+	if res >= 0 {
+		return
+	}
+
+	if iq != nil {
+		n := iq->GetNumStoredMessages()
+		for i in 0..=n {
+			msglen: d3d12.SIZE_T
+			iq->GetMessageA(i, nil, &msglen)
+
+			if msglen > 0 {
+				log.error(msglen)
+
+				msg_raw_ptr, _ := (mem.alloc(int(msglen), allocator = context.temp_allocator))
+				msg := (^d3d12.MESSAGE)(msg_raw_ptr)
+				iq->GetMessageA(i, msg, &msglen)
+				log.error(msg.pDescription)
+			}
+		}
+	}
+
+	log.panicf("%v. Error code: %0x\n", message, u32(res))
+}
+
 
 destroy :: proc(ren: ^Renderer) {
 	log.info("Destroying D3D12 renderer.")
@@ -268,22 +320,59 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 
 	{
-		shader_size: uint = len(shader_source)
+		shader_size := u32(len(shader_source))
 
-		compile_flags: u32 = 0
-		when ODIN_DEBUG {
-			compile_flags |= u32(d3dc.D3DCOMPILE.DEBUG)
-			compile_flags |= u32(d3dc.D3DCOMPILE.SKIP_OPTIMIZATION)
+		vs_compiled: ^dxc.IBlob
+		ps_compiled: ^dxc.IBlob
+
+		source_blob: ^dxc.IBlobEncoding
+		hr = ren.dxc_library->CreateBlobWithEncodingOnHeapCopy(raw_data(shader_source), shader_size, dxc.CP_UTF8, &source_blob)
+		check(hr, ren.info_queue, "Failed creating shader blob")
+
+
+		errors: ^dxc.IBlobEncoding
+
+		vs_res: ^dxc.IOperationResult
+
+		enc: u32
+		enc_known: dxc.BOOL
+		res := source_blob->GetEncoding(&enc_known, &enc)
+		check(res, ren.info_queue, "Failed getting encoding")
+
+		buf := dxc.Buffer {
+			Ptr = source_blob->GetBufferPointer(),
+			Size = source_blob->GetBufferSize(),
+			Encoding = enc_known ? enc : 0,
 		}
 
-		vs: ^d3d12.IBlob = nil
-		ps: ^d3d12.IBlob = nil
+		hr = ren.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("VSMain"), win.L("vs_6_2"), nil, 0, nil, 0, nil, &vs_res)
+		check(hr, ren.info_queue, "Failed compiling vertex shader")
+		vs_res->GetResult(&vs_compiled)
+		check(hr, ren.info_queue, "Failed fetching compiled vertex shader")
 
-		hr = d3dc.Compile(raw_data(shader_source), shader_size, nil, nil, nil, "VSMain", "vs_4_0", compile_flags, 0, &vs, nil)
-		ensure_hr(hr, "Failed to compile vertex shader")
+		vs_res->GetErrorBuffer(&errors)
+		errors_sz := errors != nil ? errors->GetBufferSize() : 0
 
-		hr = d3dc.Compile(raw_data(shader_source), shader_size, nil, nil, nil, "PSMain", "ps_4_0", compile_flags, 0, &ps, nil)
-		ensure_hr(hr, "Failed to compile pixel shader")
+		if errors_sz > 0 {
+			errors_ptr := errors->GetBufferPointer()
+			error_str := strings.string_from_ptr((^u8)(errors_ptr), int(errors_sz))
+			log.error(error_str)
+		}
+
+		ps_res: ^dxc.IOperationResult
+		hr = ren.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("PSMain"), win.L("ps_6_2"), nil, 0, nil, 0, nil, &ps_res)
+		check(hr, ren.info_queue, "Failed compiling pixel shader")
+		ps_res->GetResult(&ps_compiled)
+		check(hr, ren.info_queue, "Failed fetching compiled pixel shader")
+
+		ps_res->GetErrorBuffer(&errors)
+		errors_sz = errors != nil ? errors->GetBufferSize() : 0
+
+		if errors_sz > 0 {
+			errors_ptr := errors->GetBufferPointer()
+			error_str := strings.string_from_ptr((^u8)(errors_ptr), int(errors_sz))
+			log.error(error_str)
+		}
 
 		vertex_format: []d3d12.INPUT_ELEMENT_DESC = {
 			{ 
@@ -318,12 +407,12 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		pipeline_state_desc := d3d12.GRAPHICS_PIPELINE_STATE_DESC {
 			pRootSignature = pip.root_signature,
 			VS = {
-				pShaderBytecode = vs->GetBufferPointer(),
-				BytecodeLength = vs->GetBufferSize(),
+				pShaderBytecode = vs_compiled->GetBufferPointer(),
+				BytecodeLength = vs_compiled->GetBufferSize(),
 			},
 			PS = {
-				pShaderBytecode = ps->GetBufferPointer(),
-				BytecodeLength = ps->GetBufferSize(),
+				pShaderBytecode = ps_compiled->GetBufferPointer(),
+				BytecodeLength = ps_compiled->GetBufferSize(),
 			},
 			StreamOutput = {},
 			BlendState = {
@@ -366,8 +455,8 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		hr = ren.device->CreateGraphicsPipelineState(&pipeline_state_desc, d3d12.IPipelineState_UUID, (^rawptr)(&pip.pipeline))
 		ensure_hr(hr, "Pipeline creation failed")
 
-		vs->Release()
-		ps->Release()
+		vs_compiled->Release()
+		ps_compiled->Release()
 	}
 
 	{
@@ -440,7 +529,7 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 				0.0, 0, 0.0,  1,0,0,0,
 				200, 0, 0.0,  0,1,0,0,
 				200, 200, 0.0,  0,0,1,0,
-	 			0, 200, 0.0,  0, 0,1,0,
+				0, 200, 0.0,  0, 0,1,0,
 			}
 
 			vertex_buffer_size := len(vertices) * size_of(vertices[0])
