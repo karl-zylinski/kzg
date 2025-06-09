@@ -18,8 +18,8 @@ Mat4 :: matrix[4,4]f32
 Vec3 :: [3]f32
 
 Renderer :: struct {
-	device: ^d3d12.IDevice,
-	dxgi_factory: ^dxgi.IFactory4,
+	device: ^d3d12.IDevice5,
+	dxgi_factory: ^dxgi.IFactory7,
 	command_queue: ^d3d12.ICommandQueue,
 	info_queue: ^d3d12.IInfoQueue,
 	debug: ^d3d12.IDebug,
@@ -98,34 +98,26 @@ create :: proc() -> Renderer {
 			flags += { .DEBUG }
 		}
 
-		hr = dxgi.CreateDXGIFactory2(flags, dxgi.IFactory4_UUID, (^rawptr)(&ren.dxgi_factory))
+		hr = dxgi.CreateDXGIFactory2(flags, dxgi.IFactory7_UUID, (^rawptr)(&ren.dxgi_factory))
 		ensure_hr(hr, "Failed creating DXGI factory.")
 	}
 
-	dxgi_adapter: ^dxgi.IAdapter1
+	dxgi_adapter: ^dxgi.IAdapter4
 
-	for i: u32 = 0; ren.dxgi_factory->EnumAdapters1(i, &dxgi_adapter) == 0; i += 1 {
-		desc: dxgi.ADAPTER_DESC1
-		dxgi_adapter->GetDesc1(&desc)
-		if .SOFTWARE in desc.Flags {
-			continue
-		}
-
-		if d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, dxgi.IDevice_UUID, nil) >= 0 {
+	for i: u32 = 0; ren.dxgi_factory->EnumAdapterByGpuPreference(i, .HIGH_PERFORMANCE, dxgi.IAdapter4_UUID, (^rawptr)(&dxgi_adapter)) == 0; i += 1 {
+		if d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice5_UUID, nil) >= 0 {
 			break
-		} else {
-			continue
 		}
 	}
 
 	ensure(dxgi_adapter != nil, "Could not find hardware adapter")
 
-	hr = d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice_UUID, (^rawptr)(&ren.device))
+	hr = d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice5_UUID, (^rawptr)(&ren.device))
 	ensure_hr(hr, "Failed to creating D3D12 device")
 
 	when ODIN_DEBUG {
 		hr = ren.device->QueryInterface(d3d12.IInfoQueue_UUID, (^rawptr)(&ren.info_queue))
-		ensure_hr(hr, "Failed getting info queue")
+		//ensure_hr(hr, "Failed getting info queue")
 	}
 
 	// DXC
@@ -259,9 +251,11 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 	swap.swapchain->Release()
 }
 
-Constant_Buffer :: struct #align(256){
+Constant_Buffer :: struct {
 	mvp: matrix[4, 4]f32,
-	nums: [64]f32,
+	nums: [2]f32,
+	hello: f32,
+	pad: [180]byte,
 }
 
 create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
@@ -453,7 +447,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		}
 
 		hr = ren.device->CreateGraphicsPipelineState(&pipeline_state_desc, d3d12.IPipelineState_UUID, (^rawptr)(&pip.pipeline))
-		ensure_hr(hr, "Pipeline creation failed")
+		check(hr, ren.info_queue, "Pipeline creation failed")
 
 		vs_compiled->Release()
 		ps_compiled->Release()
@@ -573,7 +567,7 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 
 			indices := [?]u32 {
 				0, 1, 2,
-				0, 2, 10,
+				0, 2, 5,
 			}
 
 			buffer_size := len(indices) * size_of(indices[0])
@@ -687,14 +681,15 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 
 	mvp := la.matrix4_scale(Vec3{2.0/sw, -2.0/sh, 1}) * la.matrix4_translate(Vec3{-sw/2, -sh/2, 0})
 
-	bob := Constant_Buffer {
+	cb := Constant_Buffer {
 		mvp = la.transpose(mvp),
+		hello = 123,
 		nums = {
-			0 = 400,
+			7, 42,
 		}
 	}
 
-	mem.copy(pip.constant_buffer_start, &bob, size_of(bob))
+	mem.copy(pip.constant_buffer_start, &cb, size_of(cb))
 
 	cmd.list->SetGraphicsRootSignature(pip.root_signature)
 	heaps := [?]^d3d12.IDescriptorHeap {
