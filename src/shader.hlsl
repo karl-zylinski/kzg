@@ -17,10 +17,10 @@ struct PSInput {
 PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0, uint v : SV_VertexID) {
 	PSInput result;
 
-	//float4 pos = float4(ui_elements[v].pos, 0, 1);
+	float4 pos = float4(ui_elements[v].pos, 0, 1);
 
-	//result.position = mul(pos, mvp);
-	result.position = mul(position, mvp);
+	result.position = mul(pos, mvp);
+	//result.position = mul(position, mvp);
 
 	result.color = color;
 	return result;

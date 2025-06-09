@@ -17,6 +17,8 @@ NUM_RENDERTARGETS :: 2
 Mat4 :: matrix[4,4]f32
 Vec3 :: [3]f32
 
+g_info_queue: ^d3d12.IInfoQueue
+
 Renderer :: struct {
 	device: ^d3d12.IDevice5,
 	dxgi_factory: ^dxgi.IFactory7,
@@ -70,11 +72,6 @@ Command_List :: struct {
 	list: ^d3d12.IGraphicsCommandList,
 }
 
-@private
-ensure_hr :: proc(res: win.HRESULT, message: string, loc := #caller_location) {
-	log.ensuref(res >= 0, "%v. Error code: %0x\n", message, u32(res), loc = loc)
-}
-
 valid :: proc(ren: Renderer) -> bool {
 	return ren.device != nil
 }
@@ -84,11 +81,18 @@ create :: proc() -> Renderer {
 	ren: Renderer
 	hr: win.HRESULT
 
+	ensure_hr :: proc(res: win.HRESULT, message: string, loc := #caller_location) {
+		log.ensuref(res >= 0, "%v. Error code: %0x\n", message, u32(res), loc = loc)
+	}
+
+
 	when ODIN_DEBUG {
 		hr = d3d12.GetDebugInterface(d3d12.IDebug_UUID, (^rawptr)(&ren.debug))
+		ensure_hr(hr, "Failed creating debug interface")
 
-		check(hr, ren.info_queue, "Failed creating debug interface")
-		ren.debug->EnableDebugLayer()
+		if hr >= 0 {
+			ren.debug->EnableDebugLayer()
+		}
 	}
 
 	{
@@ -105,55 +109,74 @@ create :: proc() -> Renderer {
 	dxgi_adapter: ^dxgi.IAdapter4
 
 	for i: u32 = 0; ren.dxgi_factory->EnumAdapterByGpuPreference(i, .HIGH_PERFORMANCE, dxgi.IAdapter4_UUID, (^rawptr)(&dxgi_adapter)) == 0; i += 1 {
-		if d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice5_UUID, nil) >= 0 {
+		hr = d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice5_UUID, nil)
+		if hr >= 0 {
 			break
+		} else {
+			d: dxgi.ADAPTER_DESC
+			dxgi_adapter->GetDesc(&d)
+			log.info("Can't use adapter %v, skipping: %v", i, d)
 		}
 	}
 
-	ensure(dxgi_adapter != nil, "Could not find hardware adapter")
+	ensure(dxgi_adapter != nil, "Could not find usable adapter")
 
 	hr = d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice5_UUID, (^rawptr)(&ren.device))
 	ensure_hr(hr, "Failed to creating D3D12 device")
 
 	when ODIN_DEBUG {
 		hr = ren.device->QueryInterface(d3d12.IInfoQueue_UUID, (^rawptr)(&ren.info_queue))
-		//ensure_hr(hr, "Failed getting info queue")
+
+		// TODO: This is used by `check`. Is it thread safe to use it from any thread?
+		g_info_queue = ren.info_queue
 	}
 
 	// DXC
 	{
 		hr = dxc.CreateInstance(dxc.Library_CLSID, dxc.ILibrary_UUID, (^rawptr)(&ren.dxc_library))
-		check(hr, ren.info_queue, "Failed to create DXC library")
+		check(hr, "Failed to create DXC library")
 		hr = dxc.CreateInstance(dxc.Compiler_CLSID, dxc.ICompiler_UUID, (^rawptr)(&ren.dxc_compiler))
-		check(hr, ren.info_queue, "Failed to create DXC compiler")
+		check(hr, "Failed to create DXC compiler")
 	}
 
 	return ren
 }
 
-check :: proc(res: d3d12.HRESULT, iq: ^d3d12.IInfoQueue, message: string) {
+check :: proc(res: d3d12.HRESULT, message: string) {
 	if res >= 0 {
 		return
 	}
 
+	log.errorf("D3D12 error: %0x", u32(res))
+	iq := g_info_queue
 	if iq != nil {
 		n := iq->GetNumStoredMessages()
+		longest_msg: d3d12.SIZE_T
+
 		for i in 0..=n {
 			msglen: d3d12.SIZE_T
 			iq->GetMessageA(i, nil, &msglen)
 
-			if msglen > 0 {
-				log.error(msglen)
+			if msglen > longest_msg {
+				longest_msg = msglen
+			}
+		}
 
-				msg_raw_ptr, _ := (mem.alloc(int(msglen), allocator = context.temp_allocator))
-				msg := (^d3d12.MESSAGE)(msg_raw_ptr)
-				iq->GetMessageA(i, msg, &msglen)
-				log.error(msg.pDescription)
+		if longest_msg > 0 {
+			msg_raw_ptr, _ := (mem.alloc(int(longest_msg), allocator = context.temp_allocator))
+
+			for i in 0..=n {
+				msglen: d3d12.SIZE_T
+				iq->GetMessageA(i, nil, &msglen)
+
+				if msglen > 0 {
+					msg := (^d3d12.MESSAGE)(msg_raw_ptr)
+					iq->GetMessageA(i, msg, &msglen)
+					log.error(msg.pDescription)
+				}
 			}
 		}
 	}
-
-	log.panicf("%v. Error code: %0x\n", message, u32(res))
 }
 
 
@@ -191,7 +214,7 @@ create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int
 		}
 
 		hr = ren.dxgi_factory->CreateSwapChainForHwnd((^dxgi.IUnknown)(ren.command_queue), hwnd, &desc, nil, nil, (^^dxgi.ISwapChain1)(&swap.swapchain))
-		ensure_hr(hr, "Failed creating dxgi swapchain")
+		check(hr, "Failed creating dxgi swapchain")
 	}
 
 	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
@@ -204,7 +227,7 @@ create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int
 		}
 
 		hr = ren.device->CreateDescriptorHeap(&desc, d3d12.IDescriptorHeap_UUID, (^rawptr)(&swap.rtv_descriptor_heap))
-		ensure_hr(hr, "Failed creating descriptor heap")
+		check(hr, "Failed creating descriptor heap")
 	}
 
 
@@ -216,7 +239,7 @@ create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int
 
 		for i :u32= 0; i < NUM_RENDERTARGETS; i += 1 {
 			res := swap.swapchain->GetBuffer(i, d3d12.IResource_UUID, (^rawptr)(&swap.targets[i]))
-			ensure_hr(res, "Failed getting render target")
+			check(res, "Failed getting render target")
 			ren.device->CreateRenderTargetView(swap.targets[i], nil, rtv_descriptor_handle)
 			rtv_descriptor_handle.ptr += uint(rtv_descriptor_size)
 		}
@@ -225,10 +248,10 @@ create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int
 	{
 		for i in 0..<NUM_RENDERTARGETS {
 			hr = ren.device->CreateCommandAllocator(.DIRECT, d3d12.ICommandAllocator_UUID, (^rawptr)(&swap.command_allocators[i]))
-			ensure_hr(hr, "Failed creating command allocator")
+			check(hr, "Failed creating command allocator")
 
 			hr = ren.device->CreateFence(0, {}, d3d12.IFence_UUID, (^rawptr)(&swap.fences[i].fence))
-			ensure_hr(hr, "Failed to create fence")
+			check(hr, "Failed to create fence")
 			swap.fences[i].value += 1
 			manual_reset: win.BOOL = false
 			initial_state: win.BOOL = false
@@ -296,9 +319,9 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		desc.Desc_1_0.NumParameters = 1
 		serialized_desc: ^d3d12.IBlob
 		ser_root_sig_hr := d3d12.SerializeVersionedRootSignature(&desc, &serialized_desc, nil)
-		ensure_hr(ser_root_sig_hr, "Failed to serialize root signature")
+		check(ser_root_sig_hr, "Failed to serialize root signature")
 		root_sig_hr := ren.device->CreateRootSignature(0, serialized_desc->GetBufferPointer(), serialized_desc->GetBufferSize(), d3d12.IRootSignature_UUID, (^rawptr)(&pip.root_signature))
-		ensure_hr(root_sig_hr, "Failed creating root signature")
+		check(root_sig_hr, "Failed creating root signature")
 		serialized_desc->Release()
 	}
 
@@ -309,7 +332,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			Type = .CBV_SRV_UAV,
 		}
 		hr = ren.device->CreateDescriptorHeap(&cbv_heap_desc, d3d12.IDescriptorHeap_UUID, (^rawptr)(&pip.cbv_descriptor_heap))
-		ensure_hr(hr, "Failed c reating constant buffer descriptor heap.")
+		check(hr, "Failed c reating constant buffer descriptor heap.")
 	}
 
 
@@ -321,7 +344,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 		source_blob: ^dxc.IBlobEncoding
 		hr = ren.dxc_library->CreateBlobWithEncodingOnHeapCopy(raw_data(shader_source), shader_size, dxc.CP_UTF8, &source_blob)
-		check(hr, ren.info_queue, "Failed creating shader blob")
+		check(hr, "Failed creating shader blob")
 
 
 		errors: ^dxc.IBlobEncoding
@@ -331,7 +354,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		enc: u32
 		enc_known: dxc.BOOL
 		res := source_blob->GetEncoding(&enc_known, &enc)
-		check(res, ren.info_queue, "Failed getting encoding")
+		check(res, "Failed getting encoding")
 
 		buf := dxc.Buffer {
 			Ptr = source_blob->GetBufferPointer(),
@@ -340,9 +363,9 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		}
 
 		hr = ren.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("VSMain"), win.L("vs_6_2"), nil, 0, nil, 0, nil, &vs_res)
-		check(hr, ren.info_queue, "Failed compiling vertex shader")
+		check(hr, "Failed compiling vertex shader")
 		vs_res->GetResult(&vs_compiled)
-		check(hr, ren.info_queue, "Failed fetching compiled vertex shader")
+		check(hr, "Failed fetching compiled vertex shader")
 
 		vs_res->GetErrorBuffer(&errors)
 		errors_sz := errors != nil ? errors->GetBufferSize() : 0
@@ -355,9 +378,9 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 		ps_res: ^dxc.IOperationResult
 		hr = ren.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("PSMain"), win.L("ps_6_2"), nil, 0, nil, 0, nil, &ps_res)
-		check(hr, ren.info_queue, "Failed compiling pixel shader")
+		check(hr, "Failed compiling pixel shader")
 		ps_res->GetResult(&ps_compiled)
-		check(hr, ren.info_queue, "Failed fetching compiled pixel shader")
+		check(hr, "Failed fetching compiled pixel shader")
 
 		ps_res->GetErrorBuffer(&errors)
 		errors_sz = errors != nil ? errors->GetBufferSize() : 0
@@ -447,7 +470,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		}
 
 		hr = ren.device->CreateGraphicsPipelineState(&pipeline_state_desc, d3d12.IPipelineState_UUID, (^rawptr)(&pip.pipeline))
-		check(hr, ren.info_queue, "Pipeline creation failed")
+		check(hr, "Failed creating pipeline")
 
 		vs_compiled->Release()
 		ps_compiled->Release()
@@ -459,7 +482,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		}
 
 		hr = ren.device->CreateCommandQueue(&desc, d3d12.ICommandQueue_UUID, (^rawptr)(&ren.command_queue))
-		ensure_hr(hr, "Failed creating D3D12 command queue")
+		check(hr, "Failed creating D3D12 command queue")
 	}
 
 	{
@@ -485,7 +508,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			(^rawptr)(&pip.constant_buffer_res),
 		)
 
-		ensure_hr(hr, "Failed creating constant buffer resource")
+		check(hr, "Failed creating constant buffer resource")
 
 		cbv_desc := d3d12.CONSTANT_BUFFER_VIEW_DESC {
 			BufferLocation = pip.constant_buffer_res->GetGPUVirtualAddress(),
@@ -496,7 +519,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
 		ren.device->CreateConstantBufferView(&cbv_desc, handle)
 		hr = pip.constant_buffer_res->Map(0, &d3d12.RANGE{}, (^rawptr)(&pip.constant_buffer_start))
-		ensure_hr(hr, "Failed mapping cb")
+		check(hr, "Failed mapping cb")
 	}
 
 	return pip
@@ -542,13 +565,13 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 			}
 
 			hr = ren.device->CreateCommittedResource(&heap_props, {}, &resource_desc, d3d12.RESOURCE_STATE_GENERIC_READ, nil, d3d12.IResource_UUID, (^rawptr)(&m.vertex_buffer))
-			ensure_hr(hr, "Failed creating vertex buffer")
+			check(hr, "Failed creating vertex buffer")
 
 			gpu_data: rawptr
 			read_range: d3d12.RANGE
 
 			hr = m.vertex_buffer->Map(0, &read_range, &gpu_data)
-			ensure_hr(hr, "Failed creating verex buffer resource")
+			check(hr, "Failed creating verex buffer resource")
 
 			mem.copy(gpu_data, &vertices[0], vertex_buffer_size)
 			m.vertex_buffer->Unmap(0, nil)
@@ -586,13 +609,13 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 			}
 
 			hr = ren.device->CreateCommittedResource(&heap_props, {}, &resource_desc, d3d12.RESOURCE_STATE_GENERIC_READ, nil, d3d12.IResource_UUID, (^rawptr)(&m.index_buffer))
-			ensure_hr(hr, "Failed creating index buffer")
+			check(hr, "Failed creating index buffer")
 
 			gpu_data: rawptr
 			read_range: d3d12.RANGE
 
 			hr = m.index_buffer->Map(0, &read_range, &gpu_data)
-			ensure_hr(hr, "Failed creating index buffer resource")
+			check(hr, "Failed creating index buffer resource")
 
 			mem.copy(gpu_data, &indices[0], buffer_size)
 			m.index_buffer->Unmap(0, nil)
@@ -625,19 +648,19 @@ begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
 
 	hr: win.HRESULT
 	hr = ren.command_queue->Signal(fence.fence, current_fence_value)
-	ensure_hr(hr, "Failed to signal fence")
+	check(hr, "Failed to signal fence")
 
 	fence.value += 1
 	completed := fence.fence->GetCompletedValue()
 
 	if completed < current_fence_value {
 		hr = fence.fence->SetEventOnCompletion(current_fence_value, fence.event)
-		ensure_hr(hr, "Failed to set event on completion flag")
+		check(hr, "Failed to set event on completion flag")
 		win.WaitForSingleObject(fence.event, win.INFINITE)
 	}
 
 	hr = swap.command_allocators[swap.frame_index]->Reset()
-	ensure_hr(hr, "Failed resetting command allocator")
+	check(hr, "Failed resetting command allocator")
 }
 
 create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
@@ -649,9 +672,9 @@ create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
 	}
 	hr: win.HRESULT
 	hr = pip.device->CreateCommandList(0, .DIRECT, alloc, pip.pipeline, d3d12.ICommandList_UUID, (^rawptr)(&cmd.list))
-	ensure_hr(hr, "Failed to create command list")
+	check(hr, "Failed to create command list")
 	hr = cmd.list->Close()
-	ensure_hr(hr, "Failed to close command list")
+	check(hr, "Failed to close command list")
 	return cmd
 }
 
@@ -660,7 +683,7 @@ t: f32
 begin_render_pass :: proc(cmd: ^Command_List) {
 	hr: win.HRESULT
 	hr = cmd.list->Reset(cmd.command_allocator, cmd.pipeline.pipeline)
-	ensure_hr(hr, "Failed to reset command list")
+	check(hr, "Failed to reset command list")
 	swap := cmd.swapchain
 	pip := cmd.pipeline
 
@@ -751,7 +774,7 @@ execute_command_list :: proc(ren: ^Renderer, cmd: ^Command_List) {
 	cmd.list->ResourceBarrier(1, &to_present_barrier)
 
 	hr = cmd.list->Close()
-	ensure_hr(hr, "Failed to close command list")
+	check(hr, "Failed to close command list")
 	cmdlists := [?]^d3d12.IGraphicsCommandList { cmd.list }
 	ren.command_queue->ExecuteCommandLists(len(cmdlists), (^^d3d12.ICommandList)(&cmdlists[0]))
 }
@@ -760,6 +783,6 @@ present :: proc(ren: ^Renderer, swap: ^Swapchain) {
 	flags: dxgi.PRESENT
 	params: dxgi.PRESENT_PARAMETERS
 	hr := swap.swapchain->Present1(1, flags, &params)
-	ensure_hr(hr, "Present failed")
+	check(hr, "Present failed")
 	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
 }
