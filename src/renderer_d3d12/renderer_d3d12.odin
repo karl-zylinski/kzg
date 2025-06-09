@@ -55,6 +55,8 @@ Pipeline :: struct {
 
 	constant_buffer_res: ^d3d12.IResource,
 	constant_buffer_start: rawptr,
+
+	ui_elements_res: ^d3d12.IResource,
 }
 
 Mesh :: struct {
@@ -274,11 +276,13 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 	swap.swapchain->Release()
 }
 
-Constant_Buffer :: struct {
+UI_Element :: struct {
+	pos: f32,
+	size: f32,
+}
+
+Constant_Buffer :: struct #align(256) {
 	mvp: matrix[4, 4]f32,
-	nums: [2]f32,
-	hello: f32,
-	pad: [180]byte,
 }
 
 create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
@@ -297,6 +301,13 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		descriptor_ranges := [?]d3d12.DESCRIPTOR_RANGE {
 			{
 				RangeType = .CBV,
+				BaseShaderRegister = 0,
+				NumDescriptors = 1,
+				RegisterSpace = 0,
+				OffsetInDescriptorsFromTableStart = 0,
+			},
+			{
+				RangeType = .SRV,
 				BaseShaderRegister = 0,
 				NumDescriptors = 1,
 				RegisterSpace = 0,
@@ -522,6 +533,41 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		check(hr, "Failed mapping cb")
 	}
 
+	{
+		ui_elements_desc := d3d12.RESOURCE_DESC {
+			Dimension = .BUFFER,
+			Layout = .ROW_MAJOR,
+			Flags = { .ALLOW_UNORDERED_ACCESS },
+			Width = 2048,
+			Height = 1,
+			DepthOrArraySize = 1,
+			MipLevels = 1,
+			SampleDesc = { Count = 1, Quality = 0 }
+		}
+
+		ren.device->CreateCommittedResource(&d3d12.HEAP_PROPERTIES { Type = .UPLOAD },
+			{},
+			&ui_elements_desc,
+			d3d12.RESOURCE_STATE_COMMON,
+			nil,
+			d3d12.IResource_UUID,
+			(^rawptr)(&pip.ui_elements_res))
+
+		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
+			ViewDimension = .BUFFER,
+			Format = .UNKNOWN,
+			Buffer = {
+				NumElements = 2048,
+				StructureByteStride = size_of(UI_Element),
+			}
+		}
+
+		handle: d3d12.CPU_DESCRIPTOR_HANDLE
+		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
+		ren.device->CreateShaderResourceView(pip.ui_elements_res, &ui_elements_view_desc, handle)
+
+	}
+
 	return pip
 }
 
@@ -706,10 +752,6 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 
 	cb := Constant_Buffer {
 		mvp = la.transpose(mvp),
-		hello = 123,
-		nums = {
-			7, 42,
-		}
 	}
 
 	mem.copy(pip.constant_buffer_start, &cb, size_of(cb))
