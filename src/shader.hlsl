@@ -18,7 +18,7 @@ PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0, uint v : SV_V
 	PSInput result;
 	float4 pos = float4(ui_elements[v].pos, 0, 1);
 	result.position = mul(pos, mvp);
-	result.color = color;
+	result.color = float4(1,1,1,1);
 	return result;
 }
 float4 PSMain(PSInput input) : SV_TARGET {

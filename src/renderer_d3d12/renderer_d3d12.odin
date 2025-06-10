@@ -575,10 +575,19 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			},
 			3 = {
 				pos = {200, 0},
-			}
+			},
+			4 = {
+				pos = {400, 0},
+			},
+			5 = {
+				pos = {600, 200},
+			},
+			6 = {
+				pos = {400, 200},
+			},
 		}
 
-		mem.copy(buffer_upload, &things[0], 4 * size_of(UI_Element))
+		mem.copy(buffer_upload, &things[0], slice.size(things[:]))
 		pip.ui_elements_res->Unmap(0, nil)
 
 		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
@@ -668,6 +677,7 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 			indices := [?]u32 {
 				0, 1, 2,
 				0, 2, 3,
+				4, 6, 5,
 			}
 
 			buffer_size := len(indices) * size_of(indices[0])
@@ -716,7 +726,7 @@ render_mesh :: proc(cmd: ^Command_List, m: ^Mesh) {
 	cmd.list->IASetPrimitiveTopology(.TRIANGLELIST)
 	cmd.list->IASetVertexBuffers(0, 1, &m.vertex_buffer_view)
 	cmd.list->IASetIndexBuffer(&m.index_buffer_view)
-	cmd.list->DrawIndexedInstanced(6, 1, 0, 0, 0)
+	cmd.list->DrawIndexedInstanced(9, 1, 0, 0, 0)
 }
 
 begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
