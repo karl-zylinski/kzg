@@ -57,6 +57,7 @@ Pipeline :: struct {
 	constant_buffer_start: rawptr,
 
 	ui_elements_res: ^d3d12.IResource,
+	ui_elements_start: rawptr,
 }
 
 Mesh :: struct {
@@ -350,7 +351,6 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		check(hr, "Failed c reating constant buffer descriptor heap.")
 	}
 
-
 	{
 		shader_size := u32(len(shader_source))
 
@@ -560,8 +560,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 		check(hr, "Failed creating UI elements buffer")
 
-		buffer_upload: rawptr
-		pip.ui_elements_res->Map(0, &d3d12.RANGE{}, &buffer_upload)
+		pip.ui_elements_res->Map(0, &d3d12.RANGE{}, &pip.ui_elements_start)
 
 		things := [128]UI_Element {
 			0 = {
@@ -571,8 +570,8 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			},
 		}
 
-		mem.copy(buffer_upload, &things[0], slice.size(things[:]))
-		pip.ui_elements_res->Unmap(0, nil)
+		mem.copy(pip.ui_elements_start, &things[0], slice.size(things[:]))
+		//pip.ui_elements_res->Unmap(0, nil)
 
 		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
 			ViewDimension = .BUFFER,
@@ -796,12 +795,22 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 		top = 0, bottom = i32(swap.height),
 	}
 
-	t += 0.01
+	t += 1
 
 	sw := f32(swap.width)
 	sh := f32(swap.height)
 
 	mvp := la.matrix4_scale(Vec3{2.0/sw, -2.0/sh, 1}) * la.matrix4_translate(Vec3{-sw/2, -sh/2, 0})
+
+	things := [128]UI_Element {
+		0 = {
+			pos = {0, 0},
+			size = {100 + t, 100},
+			color = {0.3, 0.3, 0.3, 1},
+		},
+	}
+
+	mem.copy(pip.ui_elements_start, &things[0], slice.size(things[:]))
 
 	cb := Constant_Buffer {
 		mvp = la.transpose(mvp),
