@@ -609,7 +609,8 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 				Type = .UPLOAD,
 			}
 
-			// The position and color data for the triangle's vertices go together per-vertex
+			// NOTE: I don't use the vertices anymore, but I haven't figured out how to
+			// disable input assembler yet.
 			vertices := [?]f32 {
 				// pos            color
 				0.0, 0, 0.0,  1,0,0,0,
@@ -846,7 +847,6 @@ begin_render_pass :: proc(cmd: ^Command_List) {
 
 	cmd.list->OMSetRenderTargets(1, &rtv_handle, false, nil)
 
-	// clear backbuffer
 	clearcolor := [?]f32 { 0.05, 0.05, 0.05, 1.0 }
 	cmd.list->ClearRenderTargetView(rtv_handle, &clearcolor, 0, nil)
 }
