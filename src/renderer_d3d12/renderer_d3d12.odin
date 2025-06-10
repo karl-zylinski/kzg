@@ -280,8 +280,8 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 }
 
 UI_Element :: struct {
-	pos: f32,
-	size: f32,
+	pos: [2]f32,
+	size: [2]f32,
 }
 
 Constant_Buffer :: struct #align(256) {
@@ -307,14 +307,14 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 				BaseShaderRegister = 0,
 				NumDescriptors = 1,
 				RegisterSpace = 0,
-				OffsetInDescriptorsFromTableStart = 0,
+				OffsetInDescriptorsFromTableStart = d3d12.DESCRIPTOR_RANGE_OFFSET_APPEND,
 			},
 			{
 				RangeType = .SRV,
 				BaseShaderRegister = 0,
 				NumDescriptors = 1,
 				RegisterSpace = 0,
-				OffsetInDescriptorsFromTableStart = 0,
+				OffsetInDescriptorsFromTableStart = d3d12.DESCRIPTOR_RANGE_OFFSET_APPEND,
 			}
 		}
 
@@ -341,7 +341,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 	{
 		cbv_heap_desc := d3d12.DESCRIPTOR_HEAP_DESC {
-			NumDescriptors = 1,
+			NumDescriptors = 2,
 			Flags = { .SHADER_VISIBLE },
 			Type = .CBV_SRV_UAV,
 		}
@@ -455,7 +455,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			RasterizerState = {
 				FillMode = .SOLID,
 				CullMode = .BACK,
-				FrontCounterClockwise = false,
+				FrontCounterClockwise = true,
 				DepthBias = 0,
 				DepthBiasClamp = 0,
 				SlopeScaledDepthBias = 0,
@@ -531,6 +531,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 		handle: d3d12.CPU_DESCRIPTOR_HANDLE
 		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
+		log.info(handle.ptr)
 		ren.device->CreateConstantBufferView(&cbv_desc, handle)
 		hr = pip.constant_buffer_res->Map(0, &d3d12.RANGE{}, (^rawptr)(&pip.constant_buffer_start))
 		check(hr, "Failed mapping cb")
@@ -540,7 +541,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		ui_elements_desc := d3d12.RESOURCE_DESC {
 			Dimension = .BUFFER,
 			Layout = .ROW_MAJOR,
-			Flags = { .ALLOW_UNORDERED_ACCESS },
+			Flags = {  },
 			Width = 2048 * size_of(UI_Element),
 			Height = 1,
 			DepthOrArraySize = 1,
@@ -549,10 +550,10 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		}
 
 		hr = ren.device->CreateCommittedResource(
-			&d3d12.HEAP_PROPERTIES { Type = .DEFAULT },
+			&d3d12.HEAP_PROPERTIES { Type = .UPLOAD },
 			{},
 			&ui_elements_desc,
-			d3d12.RESOURCE_STATE_COMMON,
+			d3d12.RESOURCE_STATE_GENERIC_READ,
 			nil,
 			d3d12.IResource_UUID,
 			(^rawptr)(&pip.ui_elements_res))
@@ -562,6 +563,22 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		buffer_upload: rawptr
 		pip.ui_elements_res->Map(0, &d3d12.RANGE{}, &buffer_upload)
 
+		things := [128]UI_Element {
+			0 = {
+				pos = {0, 0},
+			},
+			1 = {
+				pos = {0, 200},
+			},
+			2 = {
+				pos = {200, 200},
+			},
+			3 = {
+				pos = {200, 0},
+			}
+		}
+
+		mem.copy(buffer_upload, &things[0], 4 * size_of(UI_Element))
 		pip.ui_elements_res->Unmap(0, nil)
 
 		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
@@ -576,6 +593,8 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 		handle: d3d12.CPU_DESCRIPTOR_HANDLE
 		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
+		handle.ptr += uint(ren.device->GetDescriptorHandleIncrementSize(.CBV_SRV_UAV)) * 1
+		log.info(handle.ptr)
 		ren.device->CreateShaderResourceView(pip.ui_elements_res, &ui_elements_view_desc, handle)
 		check_messages()
 	}
@@ -648,7 +667,7 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 
 			indices := [?]u32 {
 				0, 1, 2,
-				0, 2, 5,
+				0, 2, 3,
 			}
 
 			buffer_size := len(indices) * size_of(indices[0])
