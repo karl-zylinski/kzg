@@ -144,12 +144,7 @@ create :: proc() -> Renderer {
 	return ren
 }
 
-check :: proc(res: d3d12.HRESULT, message: string) {
-	if res >= 0 {
-		return
-	}
-
-	log.errorf("D3D12 error: %0x", u32(res))
+check_messages :: proc(loc := #caller_location) {
 	iq := g_info_queue
 	if iq != nil {
 		n := iq->GetNumStoredMessages()
@@ -174,13 +169,21 @@ check :: proc(res: d3d12.HRESULT, message: string) {
 				if msglen > 0 {
 					msg := (^d3d12.MESSAGE)(msg_raw_ptr)
 					iq->GetMessageA(i, msg, &msglen)
-					log.error(msg.pDescription)
+					log.error(msg.pDescription, location = loc)
 				}
 			}
 		}
 	}
 }
 
+check :: proc(res: d3d12.HRESULT, message: string, loc := #caller_location) {
+	if res >= 0 {
+		return
+	}
+
+	log.errorf("D3D12 error: %0x", u32(res), location = loc)
+	check_messages(loc)
+}
 
 destroy :: proc(ren: ^Renderer) {
 	log.info("Destroying D3D12 renderer.")
@@ -320,7 +323,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 				ParameterType = .DESCRIPTOR_TABLE,
 				ShaderVisibility = .ALL,
 				DescriptorTable = {
-					NumDescriptorRanges = 1,
+					NumDescriptorRanges = 2,
 					pDescriptorRanges = raw_data(&descriptor_ranges)
 				}
 			}
@@ -538,14 +541,15 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			Dimension = .BUFFER,
 			Layout = .ROW_MAJOR,
 			Flags = { .ALLOW_UNORDERED_ACCESS },
-			Width = 2048,
+			Width = 2048 * size_of(UI_Element),
 			Height = 1,
 			DepthOrArraySize = 1,
 			MipLevels = 1,
 			SampleDesc = { Count = 1, Quality = 0 }
 		}
 
-		ren.device->CreateCommittedResource(&d3d12.HEAP_PROPERTIES { Type = .UPLOAD },
+		hr = ren.device->CreateCommittedResource(
+			&d3d12.HEAP_PROPERTIES { Type = .DEFAULT },
 			{},
 			&ui_elements_desc,
 			d3d12.RESOURCE_STATE_COMMON,
@@ -553,9 +557,17 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			d3d12.IResource_UUID,
 			(^rawptr)(&pip.ui_elements_res))
 
+		check(hr, "Failed creating UI elements buffer")
+
+		buffer_upload: rawptr
+		pip.ui_elements_res->Map(0, &d3d12.RANGE{}, &buffer_upload)
+
+		pip.ui_elements_res->Unmap(0, nil)
+
 		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
 			ViewDimension = .BUFFER,
 			Format = .UNKNOWN,
+			Shader4ComponentMapping = d3d12.ENCODE_SHADER_4_COMPONENT_MAPPING(0, 1, 2, 3),
 			Buffer = {
 				NumElements = 2048,
 				StructureByteStride = size_of(UI_Element),
@@ -565,7 +577,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		handle: d3d12.CPU_DESCRIPTOR_HANDLE
 		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
 		ren.device->CreateShaderResourceView(pip.ui_elements_res, &ui_elements_view_desc, handle)
-
+		check_messages()
 	}
 
 	return pip
