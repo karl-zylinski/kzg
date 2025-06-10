@@ -282,6 +282,7 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 UI_Element :: struct {
 	pos: [2]f32,
 	size: [2]f32,
+	color: [4]f32,
 }
 
 Constant_Buffer :: struct #align(256) {
@@ -455,7 +456,7 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 			RasterizerState = {
 				FillMode = .SOLID,
 				CullMode = .BACK,
-				FrontCounterClockwise = true,
+				FrontCounterClockwise = false,
 				DepthBias = 0,
 				DepthBiasClamp = 0,
 				SlopeScaledDepthBias = 0,
@@ -566,24 +567,8 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		things := [128]UI_Element {
 			0 = {
 				pos = {0, 0},
-			},
-			1 = {
-				pos = {0, 200},
-			},
-			2 = {
-				pos = {200, 200},
-			},
-			3 = {
-				pos = {200, 0},
-			},
-			4 = {
-				pos = {400, 0},
-			},
-			5 = {
-				pos = {600, 200},
-			},
-			6 = {
-				pos = {400, 200},
+				size = {100, 100},
+				color = {0.3, 0.3, 0.3, 1},
 			},
 		}
 
@@ -674,10 +659,29 @@ create_triangle_mesh :: proc(ren: ^Renderer) -> Mesh {
 				Type = .UPLOAD,
 			}
 
+			Rect_Corner :: enum {
+				Top_Left,
+				Top_Right,
+				Bottom_Right,
+				Bottom_Left,
+			}
+
+			encode_index :: proc(element_idx: int, corner: Rect_Corner) -> u32 {
+				res: u32
+				res = u32(corner) << 24
+				res |= u32(element_idx)
+				return res
+			}
+
+			encode_index(2, .Top_Right)
+
 			indices := [?]u32 {
-				0, 1, 2,
-				0, 2, 3,
-				4, 6, 5,
+				encode_index(0, .Top_Left),
+				encode_index(0, .Top_Right),
+				encode_index(0, .Bottom_Right),
+				encode_index(0, .Top_Left),
+				encode_index(0, .Bottom_Right),
+				encode_index(0, .Bottom_Left),
 			}
 
 			buffer_size := len(indices) * size_of(indices[0])
@@ -726,7 +730,7 @@ render_mesh :: proc(cmd: ^Command_List, m: ^Mesh) {
 	cmd.list->IASetPrimitiveTopology(.TRIANGLELIST)
 	cmd.list->IASetVertexBuffers(0, 1, &m.vertex_buffer_view)
 	cmd.list->IASetIndexBuffer(&m.index_buffer_view)
-	cmd.list->DrawIndexedInstanced(9, 1, 0, 0, 0)
+	cmd.list->DrawIndexedInstanced(6, 1, 0, 0, 0)
 }
 
 begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {

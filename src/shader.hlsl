@@ -5,6 +5,7 @@ cbuffer ConstantBuffers : register(b0) {
 struct UI_Element {
 	float2 pos;
 	float2 size;
+	float4 color;
 };
 
 StructuredBuffer<UI_Element> ui_elements : register(t0);
@@ -16,9 +17,20 @@ struct PSInput {
 
 PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0, uint v : SV_VertexID) {
 	PSInput result;
-	float4 pos = float4(ui_elements[v].pos, 0, 1);
-	result.position = mul(pos, mvp);
-	result.color = float4(1,1,1,1);
+	uint idx = 0b00000000111111111111111111111111 & v;
+	UI_Element e = ui_elements[idx];
+	uint corner = v >> 24;
+	float2 pos;
+
+	switch (corner) {
+	case 0: pos = e.pos; break;
+	case 1: pos = e.pos + float2(e.size.x, 0); break;
+	case 2: pos = e.pos + e.size; break;
+	case 3: pos = e.pos + float2(0, e.size.y); break;
+	}
+	
+	result.position = mul(float4(pos, 0, 1), mvp);
+	result.color = e.color;
 	return result;
 }
 float4 PSMain(PSInput input) : SV_TARGET {
