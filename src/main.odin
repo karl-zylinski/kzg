@@ -18,7 +18,6 @@ run: bool
 renderer: ren.Renderer
 pipeline: ren.Pipeline
 swapchain: ren.Swapchain
-test_mesh: ren.Mesh
 custom_context: runtime.Context
 
 main :: proc() {
@@ -54,7 +53,7 @@ main :: proc() {
 
 	pipeline = ren.create_pipeline(&renderer, shader)
 	swapchain = ren.create_swapchain(&renderer, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
-	test_mesh = ren.create_triangle_mesh(&renderer)
+	ui := ren.create_ui(&pipeline)
 	
 	msg: win.MSG
 
@@ -62,19 +61,23 @@ main :: proc() {
 		for win.PeekMessageW(&msg, nil, 0, 0, win.PM_REMOVE) {
 			win.TranslateMessage(&msg)
 			win.DispatchMessageW(&msg)			
-		} 
+		}
+
+		ren.ui_reset(&ui)
+
+		ren.draw_rectangle(&ui, {10, 10}, {200, 100}, {0.3, 0.5, 0.3, 1})
+		ren.draw_rectangle(&ui, {10, 300}, {400, 200}, {1, 0.5, 0.3, 1})
 
 		ren.begin_frame(&renderer, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
 		ren.begin_render_pass(&cmdlist)
-		ren.render_mesh(&cmdlist, &test_mesh)
+		ren.draw_ui(&ui, &cmdlist)
 		ren.execute_command_list(&renderer, &cmdlist)
 		ren.present(&renderer, &swapchain)
 	}
 
 	ren.flush(&renderer, &swapchain)
 	log.info("Shutting down...")
-	ren.destroy_mesh(test_mesh)
 	ren.destroy_swapchain(&swapchain)
 	ren.destroy_pipeline(&pipeline)
 	ren.destroy(&renderer)
