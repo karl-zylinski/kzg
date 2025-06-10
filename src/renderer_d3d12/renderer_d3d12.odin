@@ -731,8 +731,13 @@ render_mesh :: proc(cmd: ^Command_List, m: ^Mesh) {
 	cmd.list->DrawIndexedInstanced(6, 1, 0, 0, 0)
 }
 
-begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
-	fence := &swap.fences[swap.frame_index]
+flush :: proc(ren: ^Renderer, swap: ^Swapchain) {
+	for &f in swap.fences {
+		submit_and_wait_for_fence(ren, &f)
+	}
+}
+
+submit_and_wait_for_fence :: proc(ren: ^Renderer, fence: ^Fence) {
 	current_fence_value := fence.value
 
 	hr: win.HRESULT
@@ -747,8 +752,12 @@ begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
 		check(hr, "Failed to set event on completion flag")
 		win.WaitForSingleObject(fence.event, win.INFINITE)
 	}
+}
 
-	hr = swap.command_allocators[swap.frame_index]->Reset()
+begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
+	fence := &swap.fences[swap.frame_index]
+	submit_and_wait_for_fence(ren, fence)
+	hr := swap.command_allocators[swap.frame_index]->Reset()
 	check(hr, "Failed resetting command allocator")
 }
 

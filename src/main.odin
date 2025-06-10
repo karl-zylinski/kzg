@@ -90,6 +90,7 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 		if ren.valid(renderer) {
 			width := int(win.LOWORD(lparam))
 			height := int(win.HIWORD(lparam))
+			ren.flush(&renderer, &swapchain)
 			ren.destroy_swapchain(&swapchain)
 			swapchain = ren.create_swapchain(&renderer, hwnd, width, height)
 		}
