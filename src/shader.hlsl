@@ -20,15 +20,15 @@ PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0, uint v : SV_V
 	uint idx = 0b00000000111111111111111111111111 & v;
 	UI_Element e = ui_elements[idx];
 	uint corner = v >> 24;
-	float2 pos;
+	float2 pos = e.pos;
 
 	switch (corner) {
-	case 0: pos = e.pos; break;
-	case 1: pos = e.pos + float2(e.size.x, 0); break;
-	case 2: pos = e.pos + e.size; break;
-	case 3: pos = e.pos + float2(0, e.size.y); break;
+	case 0: break;
+	case 1: pos += float2(e.size.x, 0); break;
+	case 2: pos += e.size; break;
+	case 3: pos += float2(0, e.size.y); break;
 	}
-	
+
 	result.position = mul(float4(pos, 0, 1), mvp);
 	result.color = e.color;
 	return result;

@@ -72,6 +72,7 @@ main :: proc() {
 		ren.present(&renderer, &swapchain)
 	}
 
+	ren.flush(&renderer, &swapchain)
 	log.info("Shutting down...")
 	ren.destroy_mesh(test_mesh)
 	ren.destroy_swapchain(&swapchain)
