@@ -258,7 +258,6 @@ create_swapchain :: proc(ren: ^Renderer, hwnd: win.HWND, width: int, height: int
 
 			hr = ren.device->CreateFence(0, {}, d3d12.IFence_UUID, (^rawptr)(&swap.fences[i].fence))
 			check(hr, "Failed to create fence")
-			swap.fences[i].value += 1
 			manual_reset: win.BOOL = false
 			initial_state: win.BOOL = false
 			swap.fences[i].event = win.CreateEventW(nil, manual_reset, initial_state, nil)
@@ -571,7 +570,6 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		}
 
 		mem.copy(pip.ui_elements_start, &things[0], slice.size(things[:]))
-		//pip.ui_elements_res->Unmap(0, nil)
 
 		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
 			ViewDimension = .BUFFER,
@@ -733,22 +731,16 @@ render_mesh :: proc(cmd: ^Command_List, m: ^Mesh) {
 
 flush :: proc(ren: ^Renderer, swap: ^Swapchain) {
 	for &f in swap.fences {
-		submit_and_wait_for_fence(ren, &f)
+		ren.command_queue->Signal(f.fence, f.value)
+		wait_for_fence(ren, &f)
 	}
 }
 
-submit_and_wait_for_fence :: proc(ren: ^Renderer, fence: ^Fence) {
-	current_fence_value := fence.value
-
-	hr: win.HRESULT
-	hr = ren.command_queue->Signal(fence.fence, current_fence_value)
-	check(hr, "Failed to signal fence")
-
-	fence.value += 1
+wait_for_fence :: proc(ren: ^Renderer, fence: ^Fence) {
 	completed := fence.fence->GetCompletedValue()
 
-	if completed < current_fence_value {
-		hr = fence.fence->SetEventOnCompletion(current_fence_value, fence.event)
+	if completed < fence.value {
+		hr := fence.fence->SetEventOnCompletion(fence.value, fence.event)
 		check(hr, "Failed to set event on completion flag")
 		win.WaitForSingleObject(fence.event, win.INFINITE)
 	}
@@ -756,7 +748,7 @@ submit_and_wait_for_fence :: proc(ren: ^Renderer, fence: ^Fence) {
 
 begin_frame :: proc(ren: ^Renderer, swap: ^Swapchain) {
 	fence := &swap.fences[swap.frame_index]
-	submit_and_wait_for_fence(ren, fence)
+	wait_for_fence(ren, fence)
 	hr := swap.command_allocators[swap.frame_index]->Reset()
 	check(hr, "Failed resetting command allocator")
 }
@@ -887,5 +879,9 @@ present :: proc(ren: ^Renderer, swap: ^Swapchain) {
 	params: dxgi.PRESENT_PARAMETERS
 	hr := swap.swapchain->Present1(1, flags, &params)
 	check(hr, "Present failed")
+	fence := &swap.fences[swap.frame_index]
+	fence.value += 1
+	hr = ren.command_queue->Signal(fence.fence, fence.value)
+	check(hr, "Failed to signal fence")
 	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
 }
