@@ -532,7 +532,6 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 
 		handle: d3d12.CPU_DESCRIPTOR_HANDLE
 		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
-		log.info(handle.ptr)
 		ren.device->CreateConstantBufferView(&cbv_desc, handle)
 		hr = pip.constant_buffer_res->Map(0, &d3d12.RANGE{}, (^rawptr)(&pip.constant_buffer_start))
 		check(hr, "Failed mapping cb")
@@ -588,7 +587,6 @@ create_pipeline :: proc(ren: ^Renderer, shader_source: string) -> Pipeline {
 		handle: d3d12.CPU_DESCRIPTOR_HANDLE
 		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
 		handle.ptr += uint(ren.device->GetDescriptorHandleIncrementSize(.CBV_SRV_UAV)) * 1
-		log.info(handle.ptr)
 		ren.device->CreateShaderResourceView(pip.ui_elements_res, &ui_elements_view_desc, handle)
 		check_messages()
 	}
