@@ -1,2 +1,7 @@
-make some kind of buffer for UI elements and index it in shader
-- How to cast to arbitrary data in shader? Can I cast at an offset in an array to a struct type?
+- split out UI from renderer (into a package?)
+	- needs renderer interface procs for making buffers
+	- needs to somehow map the buffers to shader resources
+
+- introduce a separate rendering thread
+	- we could do a job based system where command lists are created as jobs and then submitted
+	- needs a renderer interface
