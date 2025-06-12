@@ -31,7 +31,7 @@ ui_reset :: proc(ui: ^UI) {
 	sa.clear(&ui.indices)
 }
 
-create_ui :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
+ui_create :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
 	ui: UI
 
 	{
@@ -64,7 +64,7 @@ create_ui :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
 }
 
 
-draw_rectangle :: proc(ui: ^UI, pos: [2]f32, size: [2]f32, color: [4]f32) {
+ui_draw_rectangle :: proc(ui: ^UI, pos: [2]f32, size: [2]f32, color: [4]f32) {
 	idx := sa.len(ui.elements)
 	sa.append_elem(&ui.elements, UI_Element {
 		pos = pos,
@@ -95,7 +95,7 @@ draw_rectangle :: proc(ui: ^UI, pos: [2]f32, size: [2]f32, color: [4]f32) {
 		encode_index(idx, .Bottom_Left),)
 }
 
-draw_ui :: proc(ui: ^UI) {
+ui_commit :: proc(ui: ^UI) {
 	elems := sa.slice(&ui.elements)
 	mem.copy(ui.elements_map, raw_data(elems), slice.size(elems))
 
