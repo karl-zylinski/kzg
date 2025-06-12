@@ -69,6 +69,7 @@ Handle_Map :: struct($T: typeid, $HT: typeid, $N: int) {
 	// `idx == 0` means "no Handle". This means that you actually have `N - 1`
 	// items available.
 	items: [N]T,
+	gen: [N]u32,
 
 	// How much of `items` that is in use.
 	num_items: u32,
@@ -109,12 +110,10 @@ add :: proc(m: ^Handle_Map($T, $HT, $N), v: T) -> (HT, bool) #optional_ok {
 		item := &m.items[idx]
 		m.next_unused = m.unused_items[idx]
 		m.unused_items[idx] = 0
-		gen := item.handle.gen
 		item^ = v
-		item.handle.idx = u32(idx)
-		item.handle.gen = gen + 1
+		m.gen[idx] += 1
 		m.num_unused -= 1
-		return item.handle, true
+		return {idx, m.gen[idx]}, true
 	}
 
 	// We always have a "dummy item" at index zero. This is because handle.idx
@@ -130,10 +129,10 @@ add :: proc(m: ^Handle_Map($T, $HT, $N), v: T) -> (HT, bool) #optional_ok {
 
 	item := &m.items[m.num_items]
 	item^ = v
-	item.handle.idx = u32(m.num_items)
-	item.handle.gen = 1
+	idx := u32(m.num_items)
+	m.gen[idx] += 1
 	m.num_items += 1
-	return item.handle, true
+	return {idx, m.gen[idx]}, true
 }
 
 // Resolve a handle to a pointer of type `^T`. The pointer is stable since the
@@ -146,7 +145,7 @@ get :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) -> ^T {
 		return nil
 	}
 
-	if item := &m.items[h.idx]; item.handle == h {
+	if item := &m.items[h.idx]; m.gen[h.idx] == h.gen {
 		return item
 	}
 
@@ -162,7 +161,7 @@ remove :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) {
 		return
 	}
 
-	if item := &m.items[h.idx]; item.handle == h {
+	if item := &m.items[h.idx]; m.gen[h.idx] == h.gen {
 		m.unused_items[h.idx] = m.next_unused
 		m.next_unused = h.idx
 		m.num_unused += 1
@@ -209,23 +208,13 @@ make_iter :: proc(m: ^Handle_Map($T, $HT, $N)) -> Handle_Map_Iterator(T, HT, N) 
 iter :: proc(it: ^Handle_Map_Iterator($T, $HT, $N)) -> (val: ^T, h: HT, cond: bool) {
 	for _ in it.index..<it.m.num_items {
 		item := &it.m.items[it.index]
+		idx := it.index
 		it.index += 1
 
-		if item.handle.idx != 0 {
+		if it.m.next_unused != idx && it.m.unused_items[idx] != 0 {
 			return item, item.handle, true
 		}
 	}
 
 	return nil, {}, false
-}
-
-// If you don't want to use iterator, you can instead do:
-// for &item in my_map.items {
-//     if hm.skip(item) {
-//         continue
-//     }
-//     // do stuff
-// }
-skip :: proc(e: $T) -> bool {
-	return e.handle.idx == 0
 }

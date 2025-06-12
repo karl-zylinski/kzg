@@ -1,7 +1,13 @@
-- split out UI from renderer (into a package?)
-	- needs renderer interface procs for making buffers
-	- needs to somehow map the buffers to shader resources
+- map UI resources in a pretty way
+
+- shader constant buffer mapping
 
 - introduce a separate rendering thread
 	- we could do a job based system where command lists are created as jobs and then submitted
 	- needs a renderer interface
+
+- plugin system
+	- Hot reloadable DLLs with API struct
+
+- UI:
+	- package?

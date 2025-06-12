@@ -37,7 +37,6 @@ State :: struct {
 Buffer_Handle :: distinct hm.Handle
 
 Buffer :: struct {
-	handle: Buffer_Handle,
 	buf: ^d3d12.IResource,
 	element_size: int,
 	num_elements: int,
@@ -558,34 +557,6 @@ wait_for_fence :: proc(s: ^State, fence: ^Fence) {
 		win.WaitForSingleObject(fence.event, win.INFINITE)
 	}
 }
-
-/*
-
-		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
-			ViewDimension = .BUFFER,
-			Format = .UNKNOWN,
-			Shader4ComponentMapping = d3d12.ENCODE_SHADER_4_COMPONENT_MAPPING(0, 1, 2, 3),
-			Buffer = {
-				NumElements = 2048,
-				StructureByteStride = size_of(UI_Element),
-			}
-		}
-
-		handle: d3d12.CPU_DESCRIPTOR_HANDLE
-		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
-		handle.ptr += uint(device->GetDescriptorHandleIncrementSize(.CBV_SRV_UAV)) * 1
-		device->CreateShaderResourceView(ui.ui_elements_res, &ui_elements_view_desc, handle)
-		check_messages()
-
-
-
-
-
-
-
-
-		
-		*/
 
 begin_frame :: proc(s: ^State, swap: ^Swapchain) {
 	fence := &swap.fences[swap.frame_index]
