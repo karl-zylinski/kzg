@@ -11,10 +11,6 @@ import sa "core:container/small_array"
 WINDOW_WIDTH :: 1280
 WINDOW_HEIGHT :: 720
 
-win32_hr_assert :: proc(res: win.HRESULT, message: string) {
-	fmt.assertf(res >= 0, "%v. Error code: %0x\n", message, u32(res))
-}
-
 run: bool
 rs: ren.State
 pipeline: ren.Pipeline
