@@ -1,6 +1,9 @@
-- map UI resources in a pretty way
+- dynamic mapping to things in shader
+	- use shader reflection: https://rtarun9.github.io/blogs/shader_reflection/
+	- create a table so we can bind it
+	- for cbuffers and structuredbuffer
 
-- shader constant buffer mapping
+- map UI resources in a pretty way
 
 - introduce a separate rendering thread
 	- we could do a job based system where command lists are created as jobs and then submitted
