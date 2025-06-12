@@ -6,6 +6,7 @@ import "core:log"
 import "core:mem"
 import ren "renderer_d3d12"
 import win "core:sys/windows"
+import sa "core:container/small_array"
 
 WINDOW_WIDTH :: 1280
 WINDOW_HEIGHT :: 720
@@ -53,7 +54,7 @@ main :: proc() {
 
 	pipeline = ren.create_pipeline(&rs, shader)
 	swapchain = ren.create_swapchain(&rs, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
-	ui := ren.create_ui(&pipeline)
+	ui := create_ui(&rs, 2048, 2048)
 	
 	msg: win.MSG
 
@@ -63,15 +64,16 @@ main :: proc() {
 			win.DispatchMessageW(&msg)			
 		}
 
-		ren.ui_reset(&ui)
+		ui_reset(&ui)
 
-		ren.draw_rectangle(&ui, {10, 10}, {200, 100}, {0.3, 0.5, 0.3, 1})
-		ren.draw_rectangle(&ui, {10, 300}, {400, 200}, {1, 0.5, 0.3, 1})
+		draw_rectangle(&ui, {10, 10}, {200, 100}, {0.3, 0.5, 0.3, 1})
+		draw_rectangle(&ui, {10, 300}, {400, 200}, {1, 0.5, 0.3, 1})
 
 		ren.begin_frame(&rs, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
-		ren.begin_render_pass(&cmdlist)
-		ren.draw_ui(&ui, &cmdlist)
+		ren.begin_render_pass(&rs, &cmdlist, ui.elements_buffer)
+		draw_ui(&ui)
+		ren.draw(&rs, cmdlist, ui.vertex_buffer, ui.index_buffer, sa.len(ui.indices))
 		ren.execute_command_list(&rs, &cmdlist)
 		ren.present(&rs, &swapchain)
 	}
