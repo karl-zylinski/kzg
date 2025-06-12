@@ -15,7 +15,7 @@ win32_hr_assert :: proc(res: win.HRESULT, message: string) {
 }
 
 run: bool
-renderer: ren.Renderer
+rs: ren.State
 pipeline: ren.Pipeline
 swapchain: ren.Swapchain
 custom_context: runtime.Context
@@ -47,12 +47,12 @@ main :: proc() {
 
 	assert(hwnd != nil, "win: Window creation failed")
 
-	renderer = ren.create()
+	rs = ren.create()
 
 	shader := string(#load("shader.hlsl"))
 
-	pipeline = ren.create_pipeline(&renderer, shader)
-	swapchain = ren.create_swapchain(&renderer, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
+	pipeline = ren.create_pipeline(&rs, shader)
+	swapchain = ren.create_swapchain(&rs, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
 	ui := ren.create_ui(&pipeline)
 	
 	msg: win.MSG
@@ -68,19 +68,19 @@ main :: proc() {
 		ren.draw_rectangle(&ui, {10, 10}, {200, 100}, {0.3, 0.5, 0.3, 1})
 		ren.draw_rectangle(&ui, {10, 300}, {400, 200}, {1, 0.5, 0.3, 1})
 
-		ren.begin_frame(&renderer, &swapchain)
+		ren.begin_frame(&rs, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
 		ren.begin_render_pass(&cmdlist)
 		ren.draw_ui(&ui, &cmdlist)
-		ren.execute_command_list(&renderer, &cmdlist)
-		ren.present(&renderer, &swapchain)
+		ren.execute_command_list(&rs, &cmdlist)
+		ren.present(&rs, &swapchain)
 	}
 
-	ren.flush(&renderer, &swapchain)
+	ren.flush(&rs, &swapchain)
 	log.info("Shutting down...")
 	ren.destroy_swapchain(&swapchain)
 	ren.destroy_pipeline(&pipeline)
-	ren.destroy(&renderer)
+	ren.destroy(&rs)
 	log.info("Shutdown complete.")
 }
 
@@ -91,12 +91,12 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 		win.PostQuitMessage(0)
 		run = false
 	case win.WM_SIZE:
-		if ren.valid(renderer) {
+		if ren.valid(rs) {
 			width := int(win.LOWORD(lparam))
 			height := int(win.HIWORD(lparam))
-			ren.flush(&renderer, &swapchain)
+			ren.flush(&rs, &swapchain)
 			ren.destroy_swapchain(&swapchain)
-			swapchain = ren.create_swapchain(&renderer, hwnd, width, height)
+			swapchain = ren.create_swapchain(&rs, hwnd, width, height)
 		}
 	}
 
