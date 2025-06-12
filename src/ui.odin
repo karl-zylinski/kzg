@@ -62,11 +62,11 @@ ui_create :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
 }
 
 
-ui_draw_rectangle :: proc(ui: ^UI, pos: [2]f32, size: [2]f32, color: [4]f32) {
+ui_draw_rectangle :: proc(ui: ^UI, rect: Rect, color: [4]f32) {
 	idx := sa.len(ui.elements)
 	sa.append_elem(&ui.elements, UI_Element {
-		pos = pos,
-		size = size,
+		pos = {rect.x, rect.y},
+		size = {rect.w, rect.h},
 		color = color
 	})
 

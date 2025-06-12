@@ -11,6 +11,19 @@ import sa "core:container/small_array"
 WINDOW_WIDTH :: 1280
 WINDOW_HEIGHT :: 720
 
+Rect :: struct {
+	x, y: f32,
+	w, h: f32,
+}
+
+// [4]u8 or [4]f32 ?
+Color :: [4]f32
+
+WINDOW_RECT :: Rect {
+	w = WINDOW_WIDTH,
+	h = WINDOW_HEIGHT,
+}
+
 run: bool
 rs: ren.State
 pipeline: ren.Pipeline
@@ -62,8 +75,12 @@ main :: proc() {
 
 		ui_reset(&ui)
 
-		ui_draw_rectangle(&ui, {10, 10}, {200, 100}, {0.3, 0.5, 0.3, 1})
-		ui_draw_rectangle(&ui, {10, 300}, {400, 200}, {1, 0.5, 0.3, 1})
+		rect := WINDOW_RECT
+		ui_draw_rectangle(&ui, rect, COLOR_PANEL_BACKGROUND)
+
+		toolbar := cut_rect_top(&rect, 30, 0)
+
+		ui_draw_rectangle(&ui, toolbar, COLOR_TOOLBAR)
 
 		ren.begin_frame(&rs, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
