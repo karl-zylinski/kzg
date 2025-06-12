@@ -13,10 +13,8 @@ UI :: struct {
 	elements_map: rawptr,
 
 	vertex_buffer: ren.Buffer_Handle,
-	//vertex_buffer_view: d3d12.VERTEX_BUFFER_VIEW,
 
 	index_buffer: ren.Buffer_Handle,
-	//index_buffer_view: d3d12.INDEX_BUFFER_VIEW,
 	index_buffer_map: rawptr,
 }
 
