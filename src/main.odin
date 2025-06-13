@@ -31,8 +31,20 @@ swapchain: ren.Swapchain
 custom_context: runtime.Context
 
 main :: proc() {
-	run = true
 	context.logger = log.create_console_logger()
+
+	default_allocator := context.allocator
+	tracking_allocator: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking_allocator, default_allocator)
+	context.allocator = mem.tracking_allocator(&tracking_allocator)
+
+	defer {
+		for _, value in tracking_allocator.allocation_map {
+			fmt.printf("%v: Leaked %v bytes\n", value.location, value.size)
+		}
+	}
+
+	run = true
 	custom_context = context
 	instance := win.HINSTANCE(win.GetModuleHandleW(nil))
 	assert(instance != nil, "win: Failed fetching current instance")
@@ -59,8 +71,8 @@ main :: proc() {
 
 	rs = ren.create()
 
-	shader := string(#load("shader.hlsl"))
-
+	shader_source := string(#load("shader.hlsl"))
+	shader := ren.shader_create(&rs, shader_source)
 	pipeline = ren.create_pipeline(&rs, shader)
 	swapchain = ren.create_swapchain(&rs, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
 	ui := ui_create(&rs, 2048, 2048)
@@ -88,6 +100,7 @@ main :: proc() {
 		ui_commit(&ui)
 		ren.draw(&rs, cmdlist, ui.index_buffer, sa.len(ui.indices))
 		ren.execute_command_list(&rs, &cmdlist)
+		ren.destroy_command_list(&cmdlist)
 		ren.present(&rs, &swapchain)
 	}
 

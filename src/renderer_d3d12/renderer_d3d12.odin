@@ -27,11 +27,12 @@ State :: struct {
 	command_queue: ^d3d12.ICommandQueue,
 	info_queue: ^d3d12.IInfoQueue,
 	debug: ^d3d12.IDebug,
-
+	
 	dxc_library: ^dxc.ILibrary,
 	dxc_compiler: ^dxc.ICompiler,
 
 	buffers: hm.Handle_Map(Buffer, Buffer_Handle, 1024),
+	shaders: hm.Handle_Map(Shader, Shader_Handle, 1024),
 }
 
 Buffer_Handle :: distinct hm.Handle
@@ -40,6 +41,13 @@ Buffer :: struct {
 	buf: ^d3d12.IResource,
 	element_size: int,
 	num_elements: int,
+}
+
+Shader_Handle :: distinct hm.Handle
+
+Shader :: struct {
+	vs_bytecode: d3d12.SHADER_BYTECODE,
+	ps_bytecode: d3d12.SHADER_BYTECODE,
 }
 
 Swapchain :: struct {
@@ -113,7 +121,8 @@ create :: proc() -> State {
 
 	for i: u32 = 0; s.dxgi_factory->EnumAdapterByGpuPreference(i, .HIGH_PERFORMANCE, dxgi.IAdapter4_UUID, (^rawptr)(&dxgi_adapter)) == 0; i += 1 {
 		hr = d3d12.CreateDevice((^dxgi.IUnknown)(dxgi_adapter), ._12_0, d3d12.IDevice5_UUID, nil)
-		if hr >= 0 {
+		if hr == win.S_FALSE {
+			// The above just tests if the device creation would work. It returns S_FALSE if it would (???)
 			break
 		} else {
 			d: dxgi.ADAPTER_DESC
@@ -174,6 +183,8 @@ check_messages :: proc(loc := #caller_location) {
 				}
 			}
 		}
+
+		iq->ClearStoredMessages()
 	}
 }
 
@@ -188,9 +199,26 @@ check :: proc(res: d3d12.HRESULT, message: string, loc := #caller_location) {
 
 destroy :: proc(s: ^State) {
 	log.info("Destroying D3D12 renderer.")
+	
+	s.dxc_compiler->Release()
+	s.dxc_library->Release()
 	s.command_queue->Release()
+	s.info_queue->Release()
 	s.device->Release()
+
 	s.dxgi_factory->Release()
+
+	when ODIN_DEBUG {
+		dxgi_debug: ^dxgi.IDebug1
+
+		if win.SUCCEEDED(dxgi.DXGIGetDebugInterface1(0, dxgi.IDebug1_UUID, (^rawptr)(&dxgi_debug))) {
+			dxgi_debug->ReportLiveObjects(dxgi.DEBUG_ALL, dxgi.DEBUG_RLO_FLAGS.DETAIL | dxgi.DEBUG_RLO_FLAGS.IGNORE_INTERNAL)
+			dxgi_debug->Release()
+		}
+
+		check_messages()
+		s.debug->Release()
+	}
 }
 
 create_swapchain :: proc(s: ^State, hwnd: win.HWND, width: int, height: int) -> Swapchain {
@@ -284,11 +312,14 @@ Constant_Buffer :: struct #align(256) {
 	mvp: matrix[4, 4]f32,
 }
 
-create_pipeline :: proc(s: ^State, shader_source: string) -> Pipeline {
+create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 	hr: win.HRESULT
 	pip := Pipeline {
 		device = s.device,
 	}
+
+	shader := hm.get(&s.shaders, shader_handle)
+	assert(s != nil)
 	
 	{
 		desc := d3d12.VERSIONED_ROOT_SIGNATURE_DESC {
@@ -346,60 +377,6 @@ create_pipeline :: proc(s: ^State, shader_source: string) -> Pipeline {
 	}
 
 	{
-		shader_size := u32(len(shader_source))
-
-		vs_compiled: ^dxc.IBlob
-		ps_compiled: ^dxc.IBlob
-
-		source_blob: ^dxc.IBlobEncoding
-		hr = s.dxc_library->CreateBlobWithEncodingOnHeapCopy(raw_data(shader_source), shader_size, dxc.CP_UTF8, &source_blob)
-		check(hr, "Failed creating shader blob")
-
-
-		errors: ^dxc.IBlobEncoding
-
-		vs_res: ^dxc.IOperationResult
-
-		enc: u32
-		enc_known: dxc.BOOL
-		res := source_blob->GetEncoding(&enc_known, &enc)
-		check(res, "Failed getting encoding")
-
-		buf := dxc.Buffer {
-			Ptr = source_blob->GetBufferPointer(),
-			Size = source_blob->GetBufferSize(),
-			Encoding = enc_known ? enc : 0,
-		}
-
-		hr = s.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("VSMain"), win.L("vs_6_2"), nil, 0, nil, 0, nil, &vs_res)
-		check(hr, "Failed compiling vertex shader")
-		vs_res->GetResult(&vs_compiled)
-		check(hr, "Failed fetching compiled vertex shader")
-
-		vs_res->GetErrorBuffer(&errors)
-		errors_sz := errors != nil ? errors->GetBufferSize() : 0
-
-		if errors_sz > 0 {
-			errors_ptr := errors->GetBufferPointer()
-			error_str := strings.string_from_ptr((^u8)(errors_ptr), int(errors_sz))
-			log.error(error_str)
-		}
-
-		ps_res: ^dxc.IOperationResult
-		hr = s.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("PSMain"), win.L("ps_6_2"), nil, 0, nil, 0, nil, &ps_res)
-		check(hr, "Failed compiling pixel shader")
-		ps_res->GetResult(&ps_compiled)
-		check(hr, "Failed fetching compiled pixel shader")
-
-		ps_res->GetErrorBuffer(&errors)
-		errors_sz = errors != nil ? errors->GetBufferSize() : 0
-
-		if errors_sz > 0 {
-			errors_ptr := errors->GetBufferPointer()
-			error_str := strings.string_from_ptr((^u8)(errors_ptr), int(errors_sz))
-			log.error(error_str)
-		}
-
 		vertex_format: []d3d12.INPUT_ELEMENT_DESC = {
 			{ 
 				SemanticName = "POSITION", 
@@ -432,14 +409,8 @@ create_pipeline :: proc(s: ^State, shader_source: string) -> Pipeline {
 
 		pipeline_state_desc := d3d12.GRAPHICS_PIPELINE_STATE_DESC {
 			pRootSignature = pip.root_signature,
-			VS = {
-				pShaderBytecode = vs_compiled->GetBufferPointer(),
-				BytecodeLength = vs_compiled->GetBufferSize(),
-			},
-			PS = {
-				pShaderBytecode = ps_compiled->GetBufferPointer(),
-				BytecodeLength = ps_compiled->GetBufferSize(),
-			},
+			VS = shader.vs_bytecode,
+			PS = shader.ps_bytecode,
 			StreamOutput = {},
 			BlendState = {
 				AlphaToCoverageEnable = false,
@@ -480,9 +451,6 @@ create_pipeline :: proc(s: ^State, shader_source: string) -> Pipeline {
 
 		hr = s.device->CreateGraphicsPipelineState(&pipeline_state_desc, d3d12.IPipelineState_UUID, (^rawptr)(&pip.pipeline))
 		check(hr, "Failed creating pipeline")
-
-		vs_compiled->Release()
-		ps_compiled->Release()
 	}
 
 	{
@@ -537,6 +505,8 @@ create_pipeline :: proc(s: ^State, shader_source: string) -> Pipeline {
 
 destroy_pipeline :: proc(pip: ^Pipeline) {
 	pip.pipeline->Release()
+	pip.cbv_descriptor_heap->Release()
+	pip.constant_buffer_res->Release()
 	pip.root_signature->Release()
 }
 
@@ -596,6 +566,10 @@ create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
 	hr = cmd.list->Close()
 	check(hr, "Failed to close command list")
 	return cmd
+}
+
+destroy_command_list :: proc(cmd: ^Command_List) {
+	cmd.list->Release()
 }
 
 t: f32
@@ -722,6 +696,79 @@ present :: proc(s: ^State, swap: ^Swapchain) {
 	hr = s.command_queue->Signal(fence.fence, fence.value)
 	check(hr, "Failed to signal fence")
 	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
+}
+
+shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
+	shader_size := u32(len(shader_source))
+
+	vs_compiled: ^dxc.IBlob
+	ps_compiled: ^dxc.IBlob
+
+	source_blob: ^dxc.IBlobEncoding
+	hr: d3d12.HRESULT
+	hr = s.dxc_library->CreateBlobWithEncodingOnHeapCopy(raw_data(shader_source), shader_size, dxc.CP_UTF8, &source_blob)
+	check(hr, "Failed creating shader blob")
+
+	errors: ^dxc.IBlobEncoding
+
+	vs_res: ^dxc.IOperationResult
+
+	enc: u32
+	enc_known: dxc.BOOL
+	res := source_blob->GetEncoding(&enc_known, &enc)
+	check(res, "Failed getting encoding")
+
+	buf := dxc.Buffer {
+		Ptr = source_blob->GetBufferPointer(),
+		Size = source_blob->GetBufferSize(),
+		Encoding = enc_known ? enc : 0,
+	}
+
+	hr = s.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("VSMain"), win.L("vs_6_2"), nil, 0, nil, 0, nil, &vs_res)
+	check(hr, "Failed compiling vertex shader")
+	vs_res->GetResult(&vs_compiled)
+	check(hr, "Failed fetching compiled vertex shader")
+
+	vs_res->GetErrorBuffer(&errors)
+	errors_sz := errors != nil ? errors->GetBufferSize() : 0
+
+	if errors_sz > 0 {
+		errors_ptr := errors->GetBufferPointer()
+		error_str := strings.string_from_ptr((^u8)(errors_ptr), int(errors_sz))
+		log.error(error_str)
+	}
+
+	ps_res: ^dxc.IOperationResult
+	hr = s.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("PSMain"), win.L("ps_6_2"), nil, 0, nil, 0, nil, &ps_res)
+	check(hr, "Failed compiling pixel shader")
+	ps_res->GetResult(&ps_compiled)
+	check(hr, "Failed fetching compiled pixel shader")
+
+	source_blob->Release()
+
+	ps_res->GetErrorBuffer(&errors)
+	errors_sz = errors != nil ? errors->GetBufferSize() : 0
+
+	if errors_sz > 0 {
+		errors_ptr := errors->GetBufferPointer()
+		error_str := strings.string_from_ptr((^u8)(errors_ptr), int(errors_sz))
+		log.error(error_str)
+	}
+
+	shader := Shader {
+		vs_bytecode = d3d12.SHADER_BYTECODE {
+			pShaderBytecode = vs_compiled->GetBufferPointer(),
+			BytecodeLength = vs_compiled->GetBufferSize(),
+		},
+		ps_bytecode = d3d12.SHADER_BYTECODE {
+			pShaderBytecode = ps_compiled->GetBufferPointer(),
+			BytecodeLength = ps_compiled->GetBufferSize(),
+		}
+	}
+
+	source_blob->Release()
+
+	return hm.add(&s.shaders, shader)
 }
 
 buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer_Handle {
