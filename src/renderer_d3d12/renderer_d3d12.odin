@@ -723,7 +723,17 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		Encoding = enc_known ? enc : 0,
 	}
 
-	hr = s.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("VSMain"), win.L("vs_6_2"), nil, 0, nil, 0, nil, &vs_res)
+	dxc_args := [?]dxc.wstring {
+		win.L(dxc.ARG_DEBUG),
+	}
+
+	hr = s.dxc_compiler->Compile(
+		&source_blob.idxcblob,
+		win.L("shader.hlsl"),
+		win.L("VSMain"),
+		win.L("vs_6_2"),
+		raw_data(&dxc_args), len(dxc_args),
+		nil, 0, nil, &vs_res)
 	check(hr, "Failed compiling vertex shader")
 	vs_res->GetResult(&vs_compiled)
 	check(hr, "Failed fetching compiled vertex shader")
@@ -738,7 +748,13 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 	}
 
 	ps_res: ^dxc.IOperationResult
-	hr = s.dxc_compiler->Compile(&source_blob.idxcblob, win.L("shader.hlsl"), win.L("PSMain"), win.L("ps_6_2"), nil, 0, nil, 0, nil, &ps_res)
+	hr = s.dxc_compiler->Compile(
+		&source_blob.idxcblob,
+		win.L("shader.hlsl"),
+		win.L("PSMain"),
+		win.L("ps_6_2"),
+		raw_data(&dxc_args), len(dxc_args),
+		nil, 0, nil, &ps_res)
 	check(hr, "Failed compiling pixel shader")
 	ps_res->GetResult(&ps_compiled)
 	check(hr, "Failed fetching compiled pixel shader")
@@ -765,7 +781,7 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		}
 	}
 
-	source_blob->Release()
+
 
 	return hm.add(&s.shaders, shader)
 }
