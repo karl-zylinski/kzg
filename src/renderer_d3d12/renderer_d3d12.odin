@@ -723,8 +723,10 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		Encoding = enc_known ? enc : 0,
 	}
 
-	dxc_args := [?]dxc.wstring {
-		win.L(dxc.ARG_DEBUG),
+	dxc_args := make([dynamic]dxc.wstring, context.temp_allocator)
+
+	when ODIN_DEBUG {
+		append(&dxc_args, win.L(dxc.ARG_DEBUG))
 	}
 
 	hr = s.dxc_compiler->Compile(
@@ -732,7 +734,7 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		win.L("shader.hlsl"),
 		win.L("VSMain"),
 		win.L("vs_6_2"),
-		raw_data(&dxc_args), len(dxc_args),
+		raw_data(dxc_args), u32(len(dxc_args)),
 		nil, 0, nil, &vs_res)
 	check(hr, "Failed compiling vertex shader")
 	vs_res->GetResult(&vs_compiled)
@@ -753,7 +755,7 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		win.L("shader.hlsl"),
 		win.L("PSMain"),
 		win.L("ps_6_2"),
-		raw_data(&dxc_args), len(dxc_args),
+		raw_data(dxc_args), u32(len(dxc_args)),
 		nil, 0, nil, &ps_res)
 	check(hr, "Failed compiling pixel shader")
 	ps_res->GetResult(&ps_compiled)
