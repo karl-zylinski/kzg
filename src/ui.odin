@@ -9,10 +9,8 @@ UI :: struct {
 	elements: sa.Small_Array(2048, UI_Element),
 	indices: sa.Small_Array(2048, u32),
 
-	elements_buffer: ren.Buffer_Handle,
-	elements_map: rawptr,
-
-	vertex_buffer: ren.Buffer_Handle,
+	element_buffer: ren.Buffer_Handle,
+	element_buffer_map: rawptr,
 
 	index_buffer: ren.Buffer_Handle,
 	index_buffer_map: rawptr,
@@ -30,37 +28,23 @@ ui_reset :: proc(ui: ^UI) {
 }
 
 ui_create :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
-	ui: UI
+	element_buffer := ren.buffer_create(rs, elements_max, size_of(UI_Element))
+	element_buffer_map := ren.buffer_map(rs, element_buffer)
+	index_buffer := ren.buffer_create(rs, indices_max, size_of(u32))
+	index_buffer_map := ren.buffer_map(rs, index_buffer)
 
-	{
-		ui.elements_buffer = ren.buffer_create(rs, elements_max, size_of(UI_Element))
-		ui.elements_map = ren.buffer_map(rs, ui.elements_buffer)
+	return {
+		element_buffer = element_buffer,
+		element_buffer_map = element_buffer_map,
+		index_buffer = index_buffer,
+		index_buffer_map = index_buffer_map,
 	}
-
-	{
-		vertices := [?]f32 {
-			// pos            color
-			0.0, 0, 0.0,  1,0,0,0,
-			200, 0, 0.0,  0,1,0,0,
-			200, 200, 0.0,  0,0,1,0,
-			0, 200, 0.0,  0, 0,1,0,
-		}
-
-		ui.vertex_buffer = ren.buffer_create(rs, len(vertices), size_of(f32))
-
-		gpu_data := ren.buffer_map(rs, ui.vertex_buffer)
-		mem.copy(gpu_data, &vertices[0], slice.size(vertices[:]))
-		ren.buffer_unmap(rs, ui.vertex_buffer)
-	}
-
-	{
-		ui.index_buffer = ren.buffer_create(rs, indices_max, size_of(u32))
-		ui.index_buffer_map = ren.buffer_map(rs, ui.index_buffer)
-	}
-
-	return ui
 }
 
+ui_destroy :: proc(rs: ^ren.State, ui: ^UI) {
+	ren.buffer_destroy(rs, ui.element_buffer)
+	ren.buffer_destroy(rs, ui.index_buffer)
+}
 
 ui_draw_rectangle :: proc(ui: ^UI, rect: Rect, color: [4]f32) {
 	idx := sa.len(ui.elements)
@@ -95,7 +79,7 @@ ui_draw_rectangle :: proc(ui: ^UI, rect: Rect, color: [4]f32) {
 
 ui_commit :: proc(ui: ^UI) {
 	elems := sa.slice(&ui.elements)
-	mem.copy(ui.elements_map, raw_data(elems), slice.size(elems))
+	mem.copy(ui.element_buffer_map, raw_data(elems), slice.size(elems))
 
 	indices := sa.slice(&ui.indices)
 	mem.copy(ui.index_buffer_map, raw_data(indices), slice.size(indices))

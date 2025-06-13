@@ -565,18 +565,11 @@ begin_frame :: proc(s: ^State, swap: ^Swapchain) {
 	check(hr, "Failed resetting command allocator")
 }
 
-draw :: proc(s: ^State, cmd: Command_List, vertex_buffer: Buffer_Handle, index_buffer: Buffer_Handle, n: int) {
-	vb := hm.get(&s.buffers, vertex_buffer)
+draw :: proc(s: ^State, cmd: Command_List, index_buffer: Buffer_Handle, n: int) {
 	ib := hm.get(&s.buffers, index_buffer)
 
-	if ib == nil || vb == nil {
+	if ib == nil {
 		return
-	}
-
-	vertex_buffer_view := d3d12.VERTEX_BUFFER_VIEW {
-		BufferLocation = vb.buf->GetGPUVirtualAddress(),
-		StrideInBytes = u32(vb.element_size),
-		SizeInBytes = u32(vb.element_size * vb.num_elements),
 	}
 
 	index_buffer_view := d3d12.INDEX_BUFFER_VIEW {
@@ -586,7 +579,6 @@ draw :: proc(s: ^State, cmd: Command_List, vertex_buffer: Buffer_Handle, index_b
 	}
 
 	cmd.list->IASetPrimitiveTopology(.TRIANGLELIST)
-	cmd.list->IASetVertexBuffers(0, 1, &vertex_buffer_view)
 	cmd.list->IASetIndexBuffer(&index_buffer_view)
 	cmd.list->DrawIndexedInstanced(u32(n), 1, 0, 0, 0)
 }
@@ -765,6 +757,12 @@ buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer
 	}
 
 	return hm.add(&s.buffers, b)
+}
+
+buffer_destroy :: proc(s: ^State, h: Buffer_Handle) {
+	if b := hm.get(&s.buffers, h); b != nil {
+		b.buf->Release()
+	}
 }
 
 buffer_map :: proc(s: ^State, h: Buffer_Handle) -> rawptr {

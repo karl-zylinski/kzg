@@ -84,14 +84,15 @@ main :: proc() {
 
 		ren.begin_frame(&rs, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
-		ren.begin_render_pass(&rs, &cmdlist, ui.elements_buffer)
+		ren.begin_render_pass(&rs, &cmdlist, ui.element_buffer)
 		ui_commit(&ui)
-		ren.draw(&rs, cmdlist, ui.vertex_buffer, ui.index_buffer, sa.len(ui.indices))
+		ren.draw(&rs, cmdlist, ui.index_buffer, sa.len(ui.indices))
 		ren.execute_command_list(&rs, &cmdlist)
 		ren.present(&rs, &swapchain)
 	}
 
 	ren.flush(&rs, &swapchain)
+	ui_destroy(&rs, &ui)
 	log.info("Shutting down...")
 	ren.destroy_swapchain(&swapchain)
 	ren.destroy_pipeline(&pipeline)
