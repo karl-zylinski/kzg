@@ -510,7 +510,6 @@ destroy_pipeline :: proc(pip: ^Pipeline) {
 	pip.root_signature->Release()
 }
 
-
 flush :: proc(s: ^State, swap: ^Swapchain) {
 	for &f in swap.fences {
 		s.command_queue->Signal(f.fence, f.value)

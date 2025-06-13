@@ -33,14 +33,16 @@ custom_context: runtime.Context
 main :: proc() {
 	context.logger = log.create_console_logger()
 
-	default_allocator := context.allocator
-	tracking_allocator: mem.Tracking_Allocator
-	mem.tracking_allocator_init(&tracking_allocator, default_allocator)
-	context.allocator = mem.tracking_allocator(&tracking_allocator)
+	when ODIN_DEBUG {
+		default_allocator := context.allocator
+		tracking_allocator: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&tracking_allocator, default_allocator)
+		context.allocator = mem.tracking_allocator(&tracking_allocator)
 
-	defer {
-		for _, value in tracking_allocator.allocation_map {
-			fmt.printf("%v: Leaked %v bytes\n", value.location, value.size)
+		defer {
+			for _, value in tracking_allocator.allocation_map {
+				fmt.printf("%v: Leaked %v bytes\n", value.location, value.size)
+			}
 		}
 	}
 
