@@ -16,7 +16,6 @@ import vmem "core:mem/virtual"
 
 NUM_RENDERTARGETS :: 2
 
-Mat4 :: #row_major matrix[4,4]f32
 Vec3 :: [3]f32
 
 g_info_queue: ^d3d12.IInfoQueue
@@ -337,8 +336,7 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 			Version = ._1_0,
 		}
 
-		desc.Desc_1_0.Flags = {.ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT}
-
+	
 		descriptor_ranges := make([dynamic]d3d12.DESCRIPTOR_RANGE, context.temp_allocator)
 
 		for r in shader.resources {
@@ -390,20 +388,6 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 	}
 
 	{
-		vertex_format: []d3d12.INPUT_ELEMENT_DESC = {
-			{ 
-				SemanticName = "POSITION", 
-				Format = .R32G32B32_FLOAT, 
-				InputSlotClass = .PER_VERTEX_DATA, 
-			},
-			{   
-				SemanticName = "COLOR", 
-				Format = .R32G32B32A32_FLOAT, 
-				AlignedByteOffset = size_of(f32) * 3, 
-				InputSlotClass = .PER_VERTEX_DATA, 
-			},
-		}
-
 		default_blend_state := d3d12.RENDER_TARGET_BLEND_DESC {
 			BlendEnable = false,
 			LogicOpEnable = false,
@@ -447,10 +431,6 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 			DepthStencilState = {
 				DepthEnable = false,
 				StencilEnable = false,
-			},
-			InputLayout = {
-				pInputElementDescs = &vertex_format[0],
-				NumElements = u32(len(vertex_format)),
 			},
 			PrimitiveTopologyType = .TRIANGLE,
 			NumRenderTargets = 1,

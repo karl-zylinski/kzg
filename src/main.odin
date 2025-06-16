@@ -80,7 +80,7 @@ main :: proc() {
 	ui := ui_create(&rs, 2048, 2048)
 
 	Constant_Buffer :: struct #align(256) {
-		view_matrix: ren.Mat4,
+		view_matrix: Mat4,
 	}
 
 	cbuf := ren.buffer_create(&rs, 1, size_of(Constant_Buffer))

@@ -15,8 +15,7 @@ struct PSInput {
 	float4 color : COLOR;
 };
 
-PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0, uint v : SV_VertexID) {
-	PSInput result;
+PSInput VSMain(uint v : SV_VertexID) {
 	uint idx = 0b00000000111111111111111111111111 & v;
 	UI_Element e = ui_elements[idx];
 	uint corner = v >> 24;
@@ -29,6 +28,7 @@ PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0, uint v : SV_V
 	case 3: pos += float2(0, e.size.y); break;
 	}
 
+	PSInput result;
 	result.position = mul(float4(pos, 0, 1), view_matrix);
 	result.color = e.color;
 	return result;
