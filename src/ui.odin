@@ -5,9 +5,14 @@ import ren "renderer_d3d12"
 import "core:mem"
 import "core:slice"
 
+UI_Element_Index :: bit_field u32 {
+	idx:    int | 24,
+	corner: int | 8,
+}
+
 UI :: struct {
 	elements: sa.Small_Array(2048, UI_Element),
-	indices: sa.Small_Array(2048, u32),
+	indices: sa.Small_Array(2048, UI_Element_Index),
 
 	element_buffer: ren.Buffer_Handle,
 	element_buffer_map: rawptr,
@@ -61,11 +66,11 @@ ui_draw_rectangle :: proc(ui: ^UI, rect: Rect, color: [4]f32) {
 		Bottom_Left,
 	}
 
-	encode_index :: proc(element_idx: int, corner: Rect_Corner) -> u32 {
-		res: u32
-		res = u32(corner) << 24
-		res |= u32(element_idx)
-		return res
+	encode_index :: proc(element_idx: int, corner: Rect_Corner) -> UI_Element_Index {
+		return {
+			idx = element_idx,
+			corner = int(corner),
+		}
 	}
 
 	sa.append_elems(&ui.indices,

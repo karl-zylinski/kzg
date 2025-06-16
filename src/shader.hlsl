@@ -1,4 +1,4 @@
-cbuffer ConstantBuffers : register(b0) {
+cbuffer constant_buffer : register(b0) {
 	float4x4 view_matrix;
 };
 
@@ -10,15 +10,21 @@ struct UI_Element {
 
 StructuredBuffer<UI_Element> ui_elements : register(t0);
 
-struct PSInput {
+struct PS_Input {
 	float4 position : SV_POSITION;
 	float4 color : COLOR;
 };
 
-PSInput VSMain(uint v : SV_VertexID) {
-	uint idx = 0b00000000111111111111111111111111 & v;
+struct Element_Index {
+	uint idx    : 24;
+	uint corner : 8;
+};
+
+PS_Input VSMain(uint v : SV_VertexID) {
+	Element_Index ei = (Element_Index)v;
+	uint idx = ei.idx;
 	UI_Element e = ui_elements[idx];
-	uint corner = v >> 24;
+	uint corner = ei.corner;
 	float2 pos = e.pos;
 
 	switch (corner) {
@@ -28,11 +34,12 @@ PSInput VSMain(uint v : SV_VertexID) {
 	case 3: pos += float2(0, e.size.y); break;
 	}
 
-	PSInput result;
+	PS_Input result;
 	result.position = mul(float4(pos, 0, 1), view_matrix);
 	result.color = e.color;
 	return result;
 }
-float4 PSMain(PSInput input) : SV_TARGET {
+
+float4 PSMain(PS_Input input) : SV_TARGET {
 	return input.color;
 };

@@ -17,7 +17,6 @@ Rect :: struct {
 Mat4 :: #row_major matrix[4,4]f32
 Vec3 :: [3]f32
 
-
 // [4]u8 or [4]f32 ?
 Color :: [4]f32
 
@@ -112,7 +111,7 @@ main :: proc() {
 
 		mem.copy(cbuf_map, &cb, size_of(cb))
 
-		ren.set_buffer(&pipeline, "ConstantBuffers", cbuf)
+		ren.set_buffer(&pipeline, "constant_buffer", cbuf)
 		ren.set_buffer(&pipeline, "ui_elements", ui.element_buffer)
 
 		ui_draw_rectangle(&ui, rect, COLOR_PANEL_BACKGROUND)
