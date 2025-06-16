@@ -22,12 +22,10 @@ struct Element_Index {
 
 PS_Input VSMain(uint v : SV_VertexID) {
 	Element_Index ei = (Element_Index)v;
-	uint idx = ei.idx;
-	UI_Element e = ui_elements[idx];
-	uint corner = ei.corner;
-	float2 pos = e.pos;
+	UI_Element e = ui_elements[ei.idx];
 
-	switch (corner) {
+	float2 pos = e.pos;
+	switch (ei.corner) {
 	case 0: break;
 	case 1: pos += float2(e.size.x, 0); break;
 	case 2: pos += e.size; break;
