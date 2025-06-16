@@ -131,11 +131,11 @@ main :: proc() {
 		ren.present(&rs, &swapchain)
 	}
 
+	log.info("Shutting down...")
 	ren.flush(&rs, &swapchain)
 	ui_destroy(&rs, &ui)
 	ren.buffer_destroy(&rs, cbuf)
 	ren.shader_destroy(&rs, shader)
-	log.info("Shutting down...")
 	ren.destroy_swapchain(&swapchain)
 	ren.destroy_pipeline(&pipeline)
 	ren.destroy(&rs)
