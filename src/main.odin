@@ -7,22 +7,19 @@ import "core:mem"
 import ren "renderer_d3d12"
 import win "core:sys/windows"
 import sa "core:container/small_array"
-
-WINDOW_WIDTH :: 1280
-WINDOW_HEIGHT :: 720
+import la "core:math/linalg"
 
 Rect :: struct {
 	x, y: f32,
 	w, h: f32,
 }
 
+Mat4 :: #row_major matrix[4,4]f32
+Vec3 :: [3]f32
+
+
 // [4]u8 or [4]f32 ?
 Color :: [4]f32
-
-WINDOW_RECT :: Rect {
-	w = WINDOW_WIDTH,
-	h = WINDOW_HEIGHT,
-}
 
 run: bool
 rs: ren.State
@@ -63,10 +60,13 @@ main :: proc() {
 	class := win.RegisterClassW(&cls)
 	assert(class != 0, "win: Failed creating window class")
 
+	DEFAULT_WINDOW_WIDTH :: 1280
+	DEFAULT_WINDOW_HEIGHT :: 720
+
 	hwnd := win.CreateWindowW(class_name,
 		win.L("KZG"),
 		win.WS_OVERLAPPEDWINDOW | win.WS_VISIBLE,
-		100, 100, WINDOW_WIDTH, WINDOW_HEIGHT,
+		100, 100, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT,
 		nil, nil, instance, nil)
 
 	assert(hwnd != nil, "win: Window creation failed")
@@ -76,8 +76,15 @@ main :: proc() {
 	shader_source := string(#load("shader.hlsl"))
 	shader := ren.shader_create(&rs, shader_source)
 	pipeline = ren.create_pipeline(&rs, shader)
-	swapchain = ren.create_swapchain(&rs, hwnd, WINDOW_WIDTH, WINDOW_HEIGHT)
+	swapchain = ren.create_swapchain(&rs, hwnd, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
 	ui := ui_create(&rs, 2048, 2048)
+
+	Constant_Buffer :: struct #align(256) {
+		view_matrix: ren.Mat4,
+	}
+
+	cbuf := ren.buffer_create(&rs, 1, size_of(Constant_Buffer))
+	cbuf_map := ren.buffer_map(&rs, cbuf)
 	
 	msg: win.MSG
 
@@ -89,7 +96,25 @@ main :: proc() {
 
 		ui_reset(&ui)
 
-		rect := WINDOW_RECT
+		sw := f32(swapchain.width)
+		sh := f32(swapchain.height)
+
+		rect := Rect {
+			0, 0,
+			sw, sh,
+		}
+
+		view_matrix := la.matrix4_scale(Vec3{2.0/sw, -2.0/sh, 1}) * la.matrix4_translate(Vec3{-sw/2, -sh/2, 0})
+
+		cb := Constant_Buffer {
+			view_matrix = Mat4(view_matrix),
+		}
+
+		mem.copy(cbuf_map, &cb, size_of(cb))
+
+		ren.set_buffer(&pipeline, "ConstantBuffers", cbuf)
+		ren.set_buffer(&pipeline, "ui_elements", ui.element_buffer)
+
 		ui_draw_rectangle(&ui, rect, COLOR_PANEL_BACKGROUND)
 
 		toolbar := cut_rect_top(&rect, 30, 0)
@@ -98,7 +123,7 @@ main :: proc() {
 
 		ren.begin_frame(&rs, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
-		ren.begin_render_pass(&rs, &cmdlist, ui.element_buffer)
+		ren.begin_render_pass(&rs, &cmdlist)
 		ui_commit(&ui)
 		ren.draw(&rs, cmdlist, ui.index_buffer, sa.len(ui.indices))
 		ren.execute_command_list(&rs, &cmdlist)
@@ -108,6 +133,8 @@ main :: proc() {
 
 	ren.flush(&rs, &swapchain)
 	ui_destroy(&rs, &ui)
+	ren.buffer_destroy(&rs, cbuf)
+	ren.shader_destroy(&rs, shader)
 	log.info("Shutting down...")
 	ren.destroy_swapchain(&swapchain)
 	ren.destroy_pipeline(&pipeline)

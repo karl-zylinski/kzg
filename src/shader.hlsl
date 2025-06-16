@@ -1,5 +1,5 @@
 cbuffer ConstantBuffers : register(b0) {
-	float4x4 mvp;
+	float4x4 view_matrix;
 };
 
 struct UI_Element {
@@ -29,7 +29,7 @@ PSInput VSMain(float4 position : POSITION0, float4 color : COLOR0, uint v : SV_V
 	case 3: pos += float2(0, e.size.y); break;
 	}
 
-	result.position = mul(float4(pos, 0, 1), mvp);
+	result.position = mul(float4(pos, 0, 1), view_matrix);
 	result.color = e.color;
 	return result;
 }

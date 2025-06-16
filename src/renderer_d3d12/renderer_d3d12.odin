@@ -9,14 +9,14 @@ import win "core:sys/windows"
 import "core:slice"
 import "core:time"
 import "core:math"
-import la "core:math/linalg"
 import "core:strings"
 import sa "core:container/small_array"
 import hm "../handle_map"
+import vmem "core:mem/virtual"
 
 NUM_RENDERTARGETS :: 2
 
-Mat4 :: matrix[4,4]f32
+Mat4 :: #row_major matrix[4,4]f32
 Vec3 :: [3]f32
 
 g_info_queue: ^d3d12.IInfoQueue
@@ -29,7 +29,7 @@ State :: struct {
 	debug: ^d3d12.IDebug,
 	
 	dxc_library: ^dxc.ILibrary,
-	dxc_compiler: ^dxc.ICompiler,
+	dxc_compiler: ^dxc.ICompiler3,
 
 	buffers: hm.Handle_Map(Buffer, Buffer_Handle, 1024),
 	shaders: hm.Handle_Map(Shader, Shader_Handle, 1024),
@@ -45,9 +45,26 @@ Buffer :: struct {
 
 Shader_Handle :: distinct hm.Handle
 
+Shader_Resource_Binding_Type :: enum {
+	CBV,
+	SRV,
+}
+
+Shader_Resource :: struct {
+	binding_type: Shader_Resource_Binding_Type,
+	space: u32,
+	register: u32,
+}
+
 Shader :: struct {
 	vs_bytecode: d3d12.SHADER_BYTECODE,
 	ps_bytecode: d3d12.SHADER_BYTECODE,
+
+	// value is index into resources
+	resource_lookup: map[string]int,
+
+	resources: []Shader_Resource,
+	resources_arena: vmem.Arena
 }
 
 Swapchain :: struct {
@@ -68,13 +85,11 @@ Fence :: struct {
 }
 
 Pipeline :: struct {
-	device: ^d3d12.IDevice,
+	renderer: ^State,
 	pipeline: ^d3d12.IPipelineState,
 	root_signature: ^d3d12.IRootSignature,
 	cbv_descriptor_heap: ^d3d12.IDescriptorHeap,
-
-	constant_buffer_res: ^d3d12.IResource,
-	constant_buffer_start: rawptr,
+	shader: Shader_Handle,
 }
 
 Command_List :: struct {
@@ -147,7 +162,7 @@ create :: proc() -> State {
 	{
 		hr = dxc.CreateInstance(dxc.Library_CLSID, dxc.ILibrary_UUID, (^rawptr)(&s.dxc_library))
 		check(hr, "Failed to create DXC library")
-		hr = dxc.CreateInstance(dxc.Compiler_CLSID, dxc.ICompiler_UUID, (^rawptr)(&s.dxc_compiler))
+		hr = dxc.CreateInstance(dxc.Compiler_CLSID, dxc.ICompiler3_UUID, (^rawptr)(&s.dxc_compiler))
 		check(hr, "Failed to create DXC compiler")
 	}
 
@@ -307,15 +322,11 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 	swap.swapchain->Release()
 }
 
-
-Constant_Buffer :: struct #align(256) {
-	mvp: matrix[4, 4]f32,
-}
-
 create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 	hr: win.HRESULT
 	pip := Pipeline {
-		device = s.device,
+		renderer = s,
+		shader = shader_handle,
 	}
 
 	shader := hm.get(&s.shaders, shader_handle)
@@ -328,21 +339,23 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 
 		desc.Desc_1_0.Flags = {.ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT}
 
-		descriptor_ranges := [?]d3d12.DESCRIPTOR_RANGE {
-			{
-				RangeType = .CBV,
-				BaseShaderRegister = 0,
-				NumDescriptors = 1,
-				RegisterSpace = 0,
-				OffsetInDescriptorsFromTableStart = d3d12.DESCRIPTOR_RANGE_OFFSET_APPEND,
-			},
-			{
-				RangeType = .SRV,
-				BaseShaderRegister = 0,
-				NumDescriptors = 1,
-				RegisterSpace = 0,
-				OffsetInDescriptorsFromTableStart = d3d12.DESCRIPTOR_RANGE_OFFSET_APPEND,
+		descriptor_ranges := make([dynamic]d3d12.DESCRIPTOR_RANGE, context.temp_allocator)
+
+		for r in shader.resources {
+			type: d3d12.DESCRIPTOR_RANGE_TYPE
+
+			switch r.binding_type {
+			case .CBV: type = .CBV
+			case .SRV: type = .SRV
 			}
+
+			append(&descriptor_ranges, d3d12.DESCRIPTOR_RANGE {
+				RangeType = type,
+				BaseShaderRegister = r.register,
+				NumDescriptors = 1,
+				RegisterSpace = r.space,
+				OffsetInDescriptorsFromTableStart = d3d12.DESCRIPTOR_RANGE_OFFSET_APPEND,
+			})
 		}
 
 		root_parameters := [?]d3d12.ROOT_PARAMETER {
@@ -350,8 +363,8 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 				ParameterType = .DESCRIPTOR_TABLE,
 				ShaderVisibility = .ALL,
 				DescriptorTable = {
-					NumDescriptorRanges = 2,
-					pDescriptorRanges = raw_data(&descriptor_ranges)
+					NumDescriptorRanges = u32(len(descriptor_ranges)),
+					pDescriptorRanges = raw_data(descriptor_ranges)
 				}
 			}
 		}
@@ -461,44 +474,6 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 		hr = s.device->CreateCommandQueue(&desc, d3d12.ICommandQueue_UUID, (^rawptr)(&s.command_queue))
 		check(hr, "Failed creating D3D12 command queue")
 	}
-
-	{
-		cb_size := size_of(Constant_Buffer)
-
-		buffer_desc := d3d12.RESOURCE_DESC {
-			Dimension = .BUFFER,
-			Width = u64(cb_size),
-			Height = 1,
-			DepthOrArraySize = 1,
-			MipLevels = 1,
-			SampleDesc = { Count = 1, Quality = 0, },
-			Layout = .ROW_MAJOR,
-		}
-
-		hr = s.device->CreateCommittedResource(
-			&d3d12.HEAP_PROPERTIES { Type = .UPLOAD },
-			{},
-			&buffer_desc,
-			d3d12.RESOURCE_STATE_GENERIC_READ,
-			nil,
-			d3d12.IResource_UUID,
-			(^rawptr)(&pip.constant_buffer_res),
-		)
-
-		check(hr, "Failed creating constant buffer resource")
-
-		cbv_desc := d3d12.CONSTANT_BUFFER_VIEW_DESC {
-			BufferLocation = pip.constant_buffer_res->GetGPUVirtualAddress(),
-			SizeInBytes = u32(cb_size),
-		}
-
-		handle: d3d12.CPU_DESCRIPTOR_HANDLE
-		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
-		s.device->CreateConstantBufferView(&cbv_desc, handle)
-		hr = pip.constant_buffer_res->Map(0, &d3d12.RANGE{}, (^rawptr)(&pip.constant_buffer_start))
-		check(hr, "Failed mapping cb")
-	}
-
 	
 	return pip
 }
@@ -506,7 +481,6 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 destroy_pipeline :: proc(pip: ^Pipeline) {
 	pip.pipeline->Release()
 	pip.cbv_descriptor_heap->Release()
-	pip.constant_buffer_res->Release()
 	pip.root_signature->Release()
 }
 
@@ -560,7 +534,7 @@ create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
 		pipeline = pip,
 	}
 	hr: win.HRESULT
-	hr = pip.device->CreateCommandList(0, .DIRECT, alloc, pip.pipeline, d3d12.ICommandList_UUID, (^rawptr)(&cmd.list))
+	hr = pip.renderer.device->CreateCommandList(0, .DIRECT, alloc, pip.pipeline, d3d12.ICommandList_UUID, (^rawptr)(&cmd.list))
 	check(hr, "Failed to create command list")
 	hr = cmd.list->Close()
 	check(hr, "Failed to close command list")
@@ -571,9 +545,47 @@ destroy_command_list :: proc(cmd: ^Command_List) {
 	cmd.list->Release()
 }
 
-t: f32
+set_buffer :: proc(p: ^Pipeline, name: string, h: Buffer_Handle) {
+	shader := hm.get(&p.renderer.shaders, p.shader)
+	buf := hm.get(&p.renderer.buffers, h)
 
-begin_render_pass :: proc(s: ^State, cmd: ^Command_List, elements: Buffer_Handle) {
+	if shader == nil || buf == nil {
+		return
+	}
+
+	sz := buf.element_size * buf.num_elements
+
+	if idx, idx_ok := shader.resource_lookup[name]; idx_ok {
+		d3d_handle: d3d12.CPU_DESCRIPTOR_HANDLE
+		p.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&d3d_handle)
+		d3d_handle.ptr += uint(p.renderer.device->GetDescriptorHandleIncrementSize(.CBV_SRV_UAV)) * uint(idx)
+
+		res := &shader.resources[idx]
+
+		switch res.binding_type {
+		case .CBV:
+			cbv_desc := d3d12.CONSTANT_BUFFER_VIEW_DESC {
+				BufferLocation = buf.buf->GetGPUVirtualAddress(),
+				SizeInBytes = u32(sz),
+			}
+
+			p.renderer.device->CreateConstantBufferView(&cbv_desc, d3d_handle)
+		case .SRV:
+			srv_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
+				ViewDimension = .BUFFER,
+				Format = .UNKNOWN,
+				Shader4ComponentMapping = d3d12.ENCODE_SHADER_4_COMPONENT_MAPPING(0, 1, 2, 3),
+				Buffer = {
+					NumElements = u32(buf.num_elements),
+					StructureByteStride = u32(buf.element_size),
+				}
+			}
+			p.renderer.device->CreateShaderResourceView(buf.buf, &srv_desc, d3d_handle)
+		}
+	}
+}
+
+begin_render_pass :: proc(s: ^State, cmd: ^Command_List) {
 	hr: win.HRESULT
 	hr = cmd.list->Reset(cmd.command_allocator, cmd.pipeline.pipeline)
 	check(hr, "Failed to reset command list")
@@ -590,36 +602,8 @@ begin_render_pass :: proc(s: ^State, cmd: ^Command_List, elements: Buffer_Handle
 		top = 0, bottom = i32(swap.height),
 	}
 
-	t += 1
-
 	sw := f32(swap.width)
 	sh := f32(swap.height)
-
-	if eb := hm.get(&s.buffers, elements); eb != nil {
-		ui_elements_view_desc := d3d12.SHADER_RESOURCE_VIEW_DESC {
-			ViewDimension = .BUFFER,
-			Format = .UNKNOWN,
-			Shader4ComponentMapping = d3d12.ENCODE_SHADER_4_COMPONENT_MAPPING(0, 1, 2, 3),
-			Buffer = {
-				NumElements = u32(eb.num_elements),
-				StructureByteStride = u32(eb.element_size),
-			}
-		}
-
-		handle: d3d12.CPU_DESCRIPTOR_HANDLE
-		pip.cbv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&handle)
-		handle.ptr += uint(s.device->GetDescriptorHandleIncrementSize(.CBV_SRV_UAV)) * 1
-		s.device->CreateShaderResourceView(eb.buf, &ui_elements_view_desc, handle)
-		check_messages()
-	}
-
-	mvp := la.matrix4_scale(Vec3{2.0/sw, -2.0/sh, 1}) * la.matrix4_translate(Vec3{-sw/2, -sh/2, 0})
-
-	cb := Constant_Buffer {
-		mvp = la.transpose(mvp),
-	}
-
-	mem.copy(pip.constant_buffer_start, &cb, size_of(cb))
 
 	cmd.list->SetGraphicsRootSignature(pip.root_signature)
 	heaps := [?]^d3d12.IDescriptorHeap {
@@ -653,7 +637,7 @@ begin_render_pass :: proc(s: ^State, cmd: ^Command_List, elements: Buffer_Handle
 	swap.rtv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(&rtv_handle)
 
 	if swap.frame_index > 0 {
-		s := pip.device->GetDescriptorHandleIncrementSize(.RTV)
+		s := pip.renderer.device->GetDescriptorHandleIncrementSize(.RTV)
 		rtv_handle.ptr += uint(swap.frame_index * s)
 	}
 
@@ -710,8 +694,6 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 
 	errors: ^dxc.IBlobEncoding
 
-	vs_res: ^dxc.IOperationResult
-
 	enc: u32
 	enc_known: dxc.BOOL
 	res := source_blob->GetEncoding(&enc_known, &enc)
@@ -723,20 +705,22 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		Encoding = enc_known ? enc : 0,
 	}
 
-	dxc_args := make([dynamic]dxc.wstring, context.temp_allocator)
+	dxc_vs_args := make([dynamic]dxc.wstring, context.temp_allocator)
 
 	when ODIN_DEBUG {
-		append(&dxc_args, win.L(dxc.ARG_DEBUG))
+		append(&dxc_vs_args, win.L(dxc.ARG_DEBUG))
+		append(&dxc_vs_args, win.L("-EVSMain"))
+		append(&dxc_vs_args, win.L("-Tvs_6_2"))
 	}
 
+	vs_res: ^dxc.IResult
 	hr = s.dxc_compiler->Compile(
-		&source_blob.idxcblob,
-		win.L("shader.hlsl"),
-		win.L("VSMain"),
-		win.L("vs_6_2"),
-		raw_data(dxc_args), u32(len(dxc_args)),
-		nil, 0, nil, &vs_res)
+		&buf,
+		raw_data(dxc_vs_args), u32(len(dxc_vs_args)),
+		nil,
+		dxc.IResult_UUID, (^rawptr)(&vs_res))
 	check(hr, "Failed compiling vertex shader")
+
 	vs_res->GetResult(&vs_compiled)
 	check(hr, "Failed fetching compiled vertex shader")
 
@@ -749,14 +733,20 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		log.error(error_str)
 	}
 
-	ps_res: ^dxc.IOperationResult
+	dxc_ps_args := make([dynamic]dxc.wstring, context.temp_allocator)
+
+	when ODIN_DEBUG {
+		append(&dxc_ps_args, win.L(dxc.ARG_DEBUG))
+		append(&dxc_ps_args, win.L("-EPSMain"))
+		append(&dxc_ps_args, win.L("-Tps_6_2"))
+	}
+
+	ps_res: ^dxc.IResult
 	hr = s.dxc_compiler->Compile(
-		&source_blob.idxcblob,
-		win.L("shader.hlsl"),
-		win.L("PSMain"),
-		win.L("ps_6_2"),
-		raw_data(dxc_args), u32(len(dxc_args)),
-		nil, 0, nil, &ps_res)
+		&buf,
+		raw_data(dxc_ps_args), u32(len(dxc_ps_args)),
+		nil,
+		dxc.IResult_UUID, &ps_res)
 	check(hr, "Failed compiling pixel shader")
 	ps_res->GetResult(&ps_compiled)
 	check(hr, "Failed fetching compiled pixel shader")
@@ -783,9 +773,76 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 		}
 	}
 
+	vs_reflect_blob: ^dxc.IBlob
+	hr = vs_res->GetOutput(.REFLECTION, dxc.IBlob_UUID, (^rawptr)(&vs_reflect_blob), nil)
+	check(hr, "Failed fetching shader reflection data")
 
+	vs_reflect_buf := dxc.Buffer {
+		Ptr = vs_reflect_blob->GetBufferPointer(),
+		Size = vs_reflect_blob->GetBufferSize(),
+		Encoding = 0,
+	}
+
+	utils: ^dxc.IUtils
+	hr = dxc.CreateInstance(dxc.Utils_CLSID, dxc.IUtils_UUID, (^rawptr)(&utils))
+	check(hr, "Failed fetching DXC utils")
+
+	shader_reflection: ^d3d12.IShaderReflection
+	hr = utils->CreateReflection(&vs_reflect_buf, d3d12.IShaderReflection_UUID, (^rawptr)(&shader_reflection))
+	check(hr, "Failed creating shader reflection")
+
+	shader_desc: d3d12.SHADER_DESC
+
+	shader_reflection->GetDesc(&shader_desc)
+
+	num_resources := shader_desc.BoundResources
+	
+	arena_err := vmem.arena_init_growing(&shader.resources_arena)
+	assert(arena_err == nil)
+	resources_alloc := vmem.arena_allocator(&shader.resources_arena)
+
+	resources := make([]Shader_Resource, num_resources, resources_alloc)
+	shader.resource_lookup = make(map[string]int, resources_alloc)
+
+	input_desc: d3d12.SHADER_INPUT_BIND_DESC
+
+	for i in 0..<num_resources {
+		hr = shader_reflection->GetResourceBindingDesc(u32(i), &input_desc)
+
+		if hr != 0 {
+			break
+		}
+
+		binding_type: Shader_Resource_Binding_Type
+
+		#partial switch input_desc.Type {
+		case .CBUFFER: binding_type = .CBV
+		case .STRUCTURED: binding_type = .SRV
+		case: panic("Implement me!!")
+		}
+
+		resources[i] = Shader_Resource {
+			binding_type = binding_type,
+			space = input_desc.Space,
+			register = input_desc.BindPoint,
+		}
+
+		shader.resource_lookup[strings.clone(string(input_desc.Name), resources_alloc)] = int(i)
+	}
+
+	shader.resources = resources
 
 	return hm.add(&s.shaders, shader)
+}
+
+shader_destroy :: proc(s: ^State, h: Shader_Handle) {
+	shader := hm.get(&s.shaders, h)
+
+	if shader == nil {
+		return
+	}
+
+	vmem.arena_destroy(&shader.resources_arena)
 }
 
 buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer_Handle {
