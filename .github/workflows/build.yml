@@ -17,7 +17,7 @@ jobs:
       - uses: laytan/setup-odin@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          release: false
+          release: nightly
 
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
