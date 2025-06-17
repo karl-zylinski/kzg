@@ -20,7 +20,6 @@ jobs:
           release: nightly
 
       - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build
-        run: build.bat
+        run: .\build.bat
