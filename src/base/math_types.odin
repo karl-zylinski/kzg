@@ -7,5 +7,6 @@ Rect :: struct {
 
 Mat4 :: #row_major matrix[4,4]f32
 Vec3 :: [3]f32
+Vec2i :: [2]int
 
 Color :: [4]f32

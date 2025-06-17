@@ -35,9 +35,9 @@ State :: struct {
 
 	buffers: hm.Handle_Map(Buffer, Buffer_Handle, 1024),
 	shaders: hm.Handle_Map(Shader, Shader_Handle, 1024),
+	swapchains: hm.Handle_Map(Swapchain, Swapchain_Handle, 16),
+	pipelines: hm.Handle_Map(Pipeline, Pipeline_Handle, 128),
 }
-
-Buffer_Handle :: distinct hm.Handle
 
 Buffer :: struct {
 	buf: ^d3d12.IResource,
@@ -209,15 +209,14 @@ check :: proc(res: d3d12.HRESULT, message: string, loc := #caller_location) {
 	check_messages(loc)
 }
 
+@export
 destroy :: proc(s: ^State) {
 	log.info("Destroying D3D12 renderer.")
 	
 	s.dxc_compiler->Release()
 	s.dxc_library->Release()
 	s.command_queue->Release()
-	s.info_queue->Release()
 	s.device->Release()
-
 	s.dxgi_factory->Release()
 
 	when ODIN_DEBUG {
@@ -231,9 +230,12 @@ destroy :: proc(s: ^State) {
 		check_messages()
 		s.debug->Release()
 	}
+
+	s.info_queue->Release()
 }
 
-create_swapchain :: proc(s: ^State, hwnd: win.HWND, width: int, height: int) -> Swapchain {
+@export
+create_swapchain :: proc(s: ^State, hwnd: win.HWND, width: int, height: int) -> Swapchain_Handle {
 	log.infof("Creating swapchain with size %v x %v", width, height)
 	ensure(hwnd != nil, "Invalid window handle")
 	swap := Swapchain {
@@ -305,10 +307,17 @@ create_swapchain :: proc(s: ^State, hwnd: win.HWND, width: int, height: int) -> 
 		}
 	}
 
-	return swap
+	return hm.add(&s.swapchains, swap)
 }
 
-destroy_swapchain :: proc(swap: ^Swapchain) {
+@export
+destroy_swapchain :: proc(s: ^State, sh: Swapchain_Handle) {
+	swap := hm.get(&s.swapchains, sh)
+
+	if swap == nil {
+		return
+	}
+
 	for i in 0..<NUM_RENDERTARGETS {
 		swap.fences[i].fence->Release()
 		swap.command_allocators[i]->Release()
@@ -319,7 +328,8 @@ destroy_swapchain :: proc(swap: ^Swapchain) {
 	swap.swapchain->Release()
 }
 
-create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
+@export
+create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline_Handle {
 	hr: win.HRESULT
 	pip := Pipeline {
 		renderer = s,
@@ -453,16 +463,30 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline {
 		check(hr, "Failed creating D3D12 command queue")
 	}
 	
-	return pip
+	return hm.add(&s.pipelines, pip)
 }
 
-destroy_pipeline :: proc(pip: ^Pipeline) {
+@export
+destroy_pipeline :: proc(rs: ^State, ph: Pipeline_Handle) {
+	pip := hm.get(&rs.pipelines, ph)
+
+	if pip == nil {
+		return
+	}
+
 	pip.pipeline->Release()
 	pip.cbv_descriptor_heap->Release()
 	pip.root_signature->Release()
 }
 
-flush :: proc(s: ^State, swap: ^Swapchain) {
+@export
+flush :: proc(s: ^State, sh: Swapchain_Handle) {
+	swap := hm.get(&s.swapchains, sh)
+
+	if swap == nil {
+		return
+	}
+
 	for &f in swap.fences {
 		s.command_queue->Signal(f.fence, f.value)
 		wait_for_fence(s, &f)
@@ -479,14 +503,22 @@ wait_for_fence :: proc(s: ^State, fence: ^Fence) {
 	}
 }
 
-begin_frame :: proc(s: ^State, swap: ^Swapchain) {
+@export
+begin_frame :: proc(s: ^State, sh: Swapchain_Handle) {
+	swap := hm.get(&s.swapchains, sh)
+
+	if swap == nil {
+		return
+	}
+
 	fence := &swap.fences[swap.frame_index]
 	wait_for_fence(s, fence)
 	hr := swap.command_allocators[swap.frame_index]->Reset()
 	check(hr, "Failed resetting command allocator")
 }
 
-draw :: proc(s: ^State, cmd: Command_List, index_buffer: Buffer_Handle, n: int) {
+@export
+draw :: proc(s: ^State, cmd: ^Command_List, index_buffer: Buffer_Handle, n: int) {
 	ib := hm.get(&s.buffers, index_buffer)
 
 	if ib == nil {
@@ -504,9 +536,19 @@ draw :: proc(s: ^State, cmd: Command_List, index_buffer: Buffer_Handle, n: int) 
 	cmd.list->DrawIndexedInstanced(u32(n), 1, 0, 0, 0)
 }
 
-create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
+@export
+create_command_list :: proc(s: ^State, ph: Pipeline_Handle, sh: Swapchain_Handle) -> ^Command_List {
+	pip := hm.get(&s.pipelines, ph)
+
+	swap := hm.get(&s.swapchains, sh)
+
+	if pip == nil || swap == nil {
+		return nil
+	}
+
 	alloc := swap.command_allocators[swap.frame_index]
-	cmd := Command_List {
+	cmd := new(Command_List)
+	cmd^ = {
 		swapchain = swap,
 		command_allocator = alloc,
 		pipeline = pip,
@@ -519,11 +561,20 @@ create_command_list :: proc(pip: ^Pipeline, swap: ^Swapchain) -> Command_List {
 	return cmd
 }
 
+@export
 destroy_command_list :: proc(cmd: ^Command_List) {
 	cmd.list->Release()
+	free(cmd)
 }
 
-set_buffer :: proc(p: ^Pipeline, name: string, h: Buffer_Handle) {
+@export
+set_buffer :: proc(rs: ^State, ph: Pipeline_Handle, name: string, h: Buffer_Handle) {
+	p := hm.get(&rs.pipelines, ph)
+
+	if p == nil {
+		return
+	}
+
 	shader := hm.get(&p.renderer.shaders, p.shader)
 	buf := hm.get(&p.renderer.buffers, h)
 
@@ -563,6 +614,7 @@ set_buffer :: proc(p: ^Pipeline, name: string, h: Buffer_Handle) {
 	}
 }
 
+@export
 begin_render_pass :: proc(s: ^State, cmd: ^Command_List) {
 	hr: win.HRESULT
 	hr = cmd.list->Reset(cmd.command_allocator, cmd.pipeline.pipeline)
@@ -625,6 +677,7 @@ begin_render_pass :: proc(s: ^State, cmd: ^Command_List) {
 	cmd.list->ClearRenderTargetView(rtv_handle, &clearcolor, 0, nil)
 }
 
+@export
 execute_command_list :: proc(s: ^State, cmd: ^Command_List) {
 	hr: win.HRESULT
 
@@ -647,7 +700,14 @@ execute_command_list :: proc(s: ^State, cmd: ^Command_List) {
 	s.command_queue->ExecuteCommandLists(len(cmdlists), (^^d3d12.ICommandList)(&cmdlists[0]))
 }
 
-present :: proc(s: ^State, swap: ^Swapchain) {
+@export
+present :: proc(s: ^State, sh: Swapchain_Handle) {
+	swap := hm.get(&s.swapchains, sh)
+
+	if swap == nil {
+		return
+	}
+
 	flags: dxgi.PRESENT
 	params: dxgi.PRESENT_PARAMETERS
 	hr := swap.swapchain->Present1(1, flags, &params)
@@ -814,6 +874,7 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 	return hm.add(&s.shaders, shader)
 }
 
+@export
 shader_destroy :: proc(s: ^State, h: Shader_Handle) {
 	shader := hm.get(&s.shaders, h)
 
@@ -824,6 +885,7 @@ shader_destroy :: proc(s: ^State, h: Shader_Handle) {
 	vmem.arena_destroy(&shader.resources_arena)
 }
 
+@export
 buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer_Handle {
 	desc := d3d12.RESOURCE_DESC {
 		Dimension = .BUFFER,
@@ -859,12 +921,14 @@ buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer
 	return hm.add(&s.buffers, b)
 }
 
+@export
 buffer_destroy :: proc(s: ^State, h: Buffer_Handle) {
 	if b := hm.get(&s.buffers, h); b != nil {
 		b.buf->Release()
 	}
 }
 
+@export
 buffer_map :: proc(s: ^State, h: Buffer_Handle) -> rawptr {
 	if b := hm.get(&s.buffers, h); b != nil {
 		map_start: rawptr
@@ -880,4 +944,15 @@ buffer_unmap :: proc(s: ^State, h: Buffer_Handle) {
 	if b := hm.get(&s.buffers, h); b != nil {
 		b.buf->Unmap(0, nil)
 	}
+}
+
+@export
+swapchain_size :: proc(s: ^State, sh: Swapchain_Handle) -> base.Vec2i {
+	swap := hm.get(&s.swapchains, sh)
+
+	if swap == nil {
+		return {}
+	}
+	
+	return {swap.width, swap.height}
 }

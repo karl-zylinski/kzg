@@ -1,6 +1,7 @@
 {
 	"$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
 	"collections": [
-		{ "name": "kzg", "path": "src" }
+		{ "name": "kzg", "path": "src" },
+		{ "name": "plugins", "path": "plugins" },
 	]
 }

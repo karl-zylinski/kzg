@@ -4,7 +4,7 @@ import "base:runtime"
 import "core:fmt"
 import "core:log"
 import "core:mem"
-import ren "kzg:renderer_d3d12"
+import ren "plugins:renderer_d3d12"
 import "kzg:base"
 import win "core:sys/windows"
 import sa "core:container/small_array"
@@ -17,18 +17,19 @@ Mat4 :: base.Mat4
 Vec3 :: base.Vec3
 
 run: bool
-rs: ^ren.State
-pipeline: ren.Pipeline
-swapchain: ren.Swapchain
+rd3d: ^ren.Renderer_D3D12
+rs: ^ren.Renderer_D3D12_State
+pipeline: ren.Pipeline_Handle
+swapchain: ren.Swapchain_Handle
 custom_context: runtime.Context
 
 main :: proc() {
-	rd3d: ren.Renderer_D3D12
-	_, rd3d_ok := dynlib.initialize_symbols(&rd3d, "renderer_d3d12.dll", "", "")
+	rrd3d: ren.Renderer_D3D12
+	_, rd3d_ok := dynlib.initialize_symbols(&rrd3d, "plugins/renderer_d3d12/renderer_d3d12.dll", "", "")
+
+	rd3d = &rrd3d
 
 	context.logger = log.create_console_logger()
-
-	log.info(rd3d)
 
 	when ODIN_DEBUG {
 		default_allocator := context.allocator
@@ -71,20 +72,20 @@ main :: proc() {
 
 	assert(hwnd != nil, "win: Window creation failed")
 
-	rs = (^ren.State)(rd3d.create())
+	rs = rd3d.create()
 
 	shader_source := string(#load("shader.hlsl"))
 	shader := rd3d.shader_create(rs, shader_source)
-	pipeline = ren.create_pipeline(rs, shader)
-	swapchain = ren.create_swapchain(rs, hwnd, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+	pipeline := rd3d.create_pipeline(rs, shader)
+	swapchain = rd3d.create_swapchain(rs, transmute(u64)(hwnd), DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
 	ui := ui_create(rs, 2048, 2048)
 
 	Constant_Buffer :: struct #align(256) {
 		view_matrix: Mat4,
 	}
 
-	cbuf := ren.buffer_create(rs, 1, size_of(Constant_Buffer))
-	cbuf_map := ren.buffer_map(rs, cbuf)
+	cbuf := rd3d.buffer_create(rs, 1, size_of(Constant_Buffer))
+	cbuf_map := rd3d.buffer_map(rs, cbuf)
 	
 	msg: win.MSG
 
@@ -96,8 +97,9 @@ main :: proc() {
 
 		ui_reset(&ui)
 
-		sw := f32(swapchain.width)
-		sh := f32(swapchain.height)
+		swap_size := rd3d.swapchain_size(rs, swapchain)
+		sw := f32(swap_size.x)
+		sh := f32(swap_size.y)
 
 		rect := Rect {
 			0, 0,
@@ -112,8 +114,8 @@ main :: proc() {
 
 		mem.copy(cbuf_map, &cb, size_of(cb))
 
-		ren.set_buffer(&pipeline, "constant_buffer", cbuf)
-		ren.set_buffer(&pipeline, "ui_elements", ui.element_buffer)
+		rd3d.set_buffer(rs, pipeline, "constant_buffer", cbuf)
+		rd3d.set_buffer(rs, pipeline, "ui_elements", ui.element_buffer)
 
 		ui_draw_rectangle(&ui, rect, COLOR_PANEL_BACKGROUND)
 
@@ -121,24 +123,24 @@ main :: proc() {
 
 		ui_draw_rectangle(&ui, toolbar, COLOR_TOOLBAR)
 
-		ren.begin_frame(rs, &swapchain)
-		cmdlist := ren.create_command_list(&pipeline, &swapchain)
-		ren.begin_render_pass(rs, &cmdlist)
+		rd3d.begin_frame(rs, swapchain)
+		cmdlist := rd3d.create_command_list(rs, pipeline, swapchain)
+		rd3d.begin_render_pass(rs, cmdlist)
 		ui_commit(&ui)
-		ren.draw(rs, cmdlist, ui.index_buffer, len(ui.indices))
-		ren.execute_command_list(rs, &cmdlist)
-		ren.destroy_command_list(&cmdlist)
-		ren.present(rs, &swapchain)
+		rd3d.draw(rs, cmdlist, ui.index_buffer, len(ui.indices))
+		rd3d.execute_command_list(rs, cmdlist)
+		rd3d.destroy_command_list(cmdlist)
+		rd3d.present(rs, swapchain)
 	}
 
 	log.info("Shutting down...")
-	ren.flush(rs, &swapchain)
+	rd3d.flush(rs, swapchain)
 	ui_destroy(rs, &ui)
-	ren.buffer_destroy(rs, cbuf)
-	ren.shader_destroy(rs, shader)
-	ren.destroy_swapchain(&swapchain)
-	ren.destroy_pipeline(&pipeline)
-	ren.destroy(rs)
+	rd3d.buffer_destroy(rs, cbuf)
+	rd3d.shader_destroy(rs, shader)
+	rd3d.destroy_swapchain(rs, swapchain)
+	rd3d.destroy_pipeline(rs, pipeline)
+	rd3d.destroy(rs)
 	log.info("Shutdown complete.")
 }
 
@@ -152,9 +154,9 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 		if rs != nil {
 			width := int(win.LOWORD(lparam))
 			height := int(win.HIWORD(lparam))
-			ren.flush(rs, &swapchain)
-			ren.destroy_swapchain(&swapchain)
-			swapchain = ren.create_swapchain(rs, hwnd, width, height)
+			rd3d.flush(rs, swapchain)
+			rd3d.destroy_swapchain(rs, swapchain)
+			swapchain = rd3d.create_swapchain(rs, transmute(u64)hwnd, width, height)
 		}
 	}
 
