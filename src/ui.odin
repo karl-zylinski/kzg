@@ -1,9 +1,9 @@
 package kzg
 
-import sa "core:container/small_array"
 import ren "renderer_d3d12"
 import "core:mem"
 import "core:slice"
+import "base:runtime"
 
 UI_Element_Index :: bit_field u32 {
 	idx:    int | 24,
@@ -11,8 +11,9 @@ UI_Element_Index :: bit_field u32 {
 }
 
 UI :: struct {
-	elements: sa.Small_Array(2048, UI_Element),
-	indices: sa.Small_Array(2048, UI_Element_Index),
+	elements: [dynamic]UI_Element,
+	indices: [dynamic]UI_Element_Index,
+	dyn_allocator: runtime.Allocator,
 
 	element_buffer: ren.Buffer_Handle,
 	element_buffer_map: rawptr,
@@ -28,8 +29,8 @@ UI_Element :: struct {
 }
 
 ui_reset :: proc(ui: ^UI) {
-	sa.clear(&ui.elements)
-	sa.clear(&ui.indices)
+	clear(&ui.elements)
+	clear(&ui.indices)
 }
 
 ui_create :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
@@ -38,7 +39,15 @@ ui_create :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
 	index_buffer := ren.buffer_create(rs, indices_max, size_of(u32))
 	index_buffer_map := ren.buffer_map(rs, index_buffer)
 
+	elements := make([dynamic]UI_Element, 0, elements_max)
+	elements.allocator = runtime.panic_allocator()
+	indices := make([dynamic]UI_Element_Index, 0, indices_max)
+	indices.allocator = runtime.panic_allocator()
+
 	return {
+		elements = elements,
+		indices = indices,
+		dyn_allocator = context.allocator,
 		element_buffer = element_buffer,
 		element_buffer_map = element_buffer_map,
 		index_buffer = index_buffer,
@@ -49,11 +58,15 @@ ui_create :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
 ui_destroy :: proc(rs: ^ren.State, ui: ^UI) {
 	ren.buffer_destroy(rs, ui.element_buffer)
 	ren.buffer_destroy(rs, ui.index_buffer)
+	ui.elements.allocator = ui.dyn_allocator
+	delete(ui.elements)
+	ui.indices.allocator = ui.dyn_allocator
+	delete(ui.indices)
 }
 
 ui_draw_rectangle :: proc(ui: ^UI, rect: Rect, color: [4]f32) {
-	idx := sa.len(ui.elements)
-	sa.append_elem(&ui.elements, UI_Element {
+	idx := len(ui.elements)
+	append(&ui.elements, UI_Element {
 		pos = {rect.x, rect.y},
 		size = {rect.w, rect.h},
 		color = color
@@ -73,7 +86,7 @@ ui_draw_rectangle :: proc(ui: ^UI, rect: Rect, color: [4]f32) {
 		}
 	}
 
-	sa.append_elems(&ui.indices,
+	append(&ui.indices,
 		encode_index(idx, .Top_Left),
 		encode_index(idx, .Top_Right),
 		encode_index(idx, .Bottom_Right),
@@ -83,9 +96,9 @@ ui_draw_rectangle :: proc(ui: ^UI, rect: Rect, color: [4]f32) {
 }
 
 ui_commit :: proc(ui: ^UI) {
-	elems := sa.slice(&ui.elements)
+	elems := ui.elements[:]
 	mem.copy(ui.element_buffer_map, raw_data(elems), slice.size(elems))
 
-	indices := sa.slice(&ui.indices)
+	indices := ui.indices[:]
 	mem.copy(ui.index_buffer_map, raw_data(indices), slice.size(indices))
 }

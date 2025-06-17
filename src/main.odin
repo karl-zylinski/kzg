@@ -124,7 +124,7 @@ main :: proc() {
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
 		ren.begin_render_pass(&rs, &cmdlist)
 		ui_commit(&ui)
-		ren.draw(&rs, cmdlist, ui.index_buffer, sa.len(ui.indices))
+		ren.draw(&rs, cmdlist, ui.index_buffer, len(ui.indices))
 		ren.execute_command_list(&rs, &cmdlist)
 		ren.destroy_command_list(&cmdlist)
 		ren.present(&rs, &swapchain)
