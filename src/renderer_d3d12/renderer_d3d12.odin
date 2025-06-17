@@ -1,22 +1,25 @@
 package Renderer
 
 import "core:log"
-import "core:mem"
-import d3d12 "vendor:directx/d3d12"
-import "vendor:directx/dxc"
-import dxgi "vendor:directx/dxgi"
-import win "core:sys/windows"
-import "core:slice"
-import "core:time"
 import "core:math"
+import "core:mem"
+import "core:slice"
 import "core:strings"
+import "core:time"
 import sa "core:container/small_array"
-import hm "../handle_map"
 import vmem "core:mem/virtual"
+import win "core:sys/windows"
+
+import "vendor:directx/dxc"
+import d3d12 "vendor:directx/d3d12"
+import dxgi "vendor:directx/dxgi"
+
+import hm "kzg:base/handle_map"
+import "kzg:base"
 
 NUM_RENDERTARGETS :: 2
 
-Vec3 :: [3]f32
+Vec3 :: base.Vec3
 
 g_info_queue: ^d3d12.IInfoQueue
 

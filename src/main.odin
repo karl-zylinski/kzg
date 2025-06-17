@@ -4,21 +4,16 @@ import "base:runtime"
 import "core:fmt"
 import "core:log"
 import "core:mem"
-import ren "renderer_d3d12"
+import ren "kzg:renderer_d3d12"
+import "kzg:base"
 import win "core:sys/windows"
 import sa "core:container/small_array"
 import la "core:math/linalg"
 
-Rect :: struct {
-	x, y: f32,
-	w, h: f32,
-}
-
-Mat4 :: #row_major matrix[4,4]f32
-Vec3 :: [3]f32
-
-// [4]u8 or [4]f32 ?
-Color :: [4]f32
+Rect :: base.Rect
+Color :: base.Color
+Mat4 :: base.Mat4
+Vec3 :: base.Vec3
 
 run: bool
 rs: ren.State
