@@ -1,4 +1,4 @@
-package Renderer
+package renderer_d3d12
 
 import "core:log"
 import "core:math"
@@ -44,8 +44,6 @@ Buffer :: struct {
 	element_size: int,
 	num_elements: int,
 }
-
-Shader_Handle :: distinct hm.Handle
 
 Shader_Resource_Binding_Type :: enum {
 	CBV,
@@ -101,13 +99,10 @@ Command_List :: struct {
 	list: ^d3d12.IGraphicsCommandList,
 }
 
-valid :: proc(s: State) -> bool {
-	return s.device != nil
-}
-
-create :: proc() -> State {
+@export
+create :: proc(allocator := context.allocator, loc := #caller_location) -> ^State {
 	log.info("Creating D3D12 renderer.")
-	s: State
+	s := new(State, allocator, loc)
 	hr: win.HRESULT
 
 	ensure_hr :: proc(res: win.HRESULT, message: string, loc := #caller_location) {
@@ -664,6 +659,7 @@ present :: proc(s: ^State, swap: ^Swapchain) {
 	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
 }
 
+@export
 shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 	shader_size := u32(len(shader_source))
 

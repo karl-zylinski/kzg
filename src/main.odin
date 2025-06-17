@@ -9,6 +9,7 @@ import "kzg:base"
 import win "core:sys/windows"
 import sa "core:container/small_array"
 import la "core:math/linalg"
+import "core:dynlib"
 
 Rect :: base.Rect
 Color :: base.Color
@@ -16,13 +17,18 @@ Mat4 :: base.Mat4
 Vec3 :: base.Vec3
 
 run: bool
-rs: ren.State
+rs: ^ren.State
 pipeline: ren.Pipeline
 swapchain: ren.Swapchain
 custom_context: runtime.Context
 
 main :: proc() {
+	rd3d: ren.Renderer_D3D12
+	_, rd3d_ok := dynlib.initialize_symbols(&rd3d, "renderer_d3d12.dll", "", "")
+
 	context.logger = log.create_console_logger()
+
+	log.info(rd3d)
 
 	when ODIN_DEBUG {
 		default_allocator := context.allocator
@@ -65,20 +71,20 @@ main :: proc() {
 
 	assert(hwnd != nil, "win: Window creation failed")
 
-	rs = ren.create()
+	rs = (^ren.State)(rd3d.create())
 
 	shader_source := string(#load("shader.hlsl"))
-	shader := ren.shader_create(&rs, shader_source)
-	pipeline = ren.create_pipeline(&rs, shader)
-	swapchain = ren.create_swapchain(&rs, hwnd, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
-	ui := ui_create(&rs, 2048, 2048)
+	shader := rd3d.shader_create(rs, shader_source)
+	pipeline = ren.create_pipeline(rs, shader)
+	swapchain = ren.create_swapchain(rs, hwnd, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+	ui := ui_create(rs, 2048, 2048)
 
 	Constant_Buffer :: struct #align(256) {
 		view_matrix: Mat4,
 	}
 
-	cbuf := ren.buffer_create(&rs, 1, size_of(Constant_Buffer))
-	cbuf_map := ren.buffer_map(&rs, cbuf)
+	cbuf := ren.buffer_create(rs, 1, size_of(Constant_Buffer))
+	cbuf_map := ren.buffer_map(rs, cbuf)
 	
 	msg: win.MSG
 
@@ -115,24 +121,24 @@ main :: proc() {
 
 		ui_draw_rectangle(&ui, toolbar, COLOR_TOOLBAR)
 
-		ren.begin_frame(&rs, &swapchain)
+		ren.begin_frame(rs, &swapchain)
 		cmdlist := ren.create_command_list(&pipeline, &swapchain)
-		ren.begin_render_pass(&rs, &cmdlist)
+		ren.begin_render_pass(rs, &cmdlist)
 		ui_commit(&ui)
-		ren.draw(&rs, cmdlist, ui.index_buffer, len(ui.indices))
-		ren.execute_command_list(&rs, &cmdlist)
+		ren.draw(rs, cmdlist, ui.index_buffer, len(ui.indices))
+		ren.execute_command_list(rs, &cmdlist)
 		ren.destroy_command_list(&cmdlist)
-		ren.present(&rs, &swapchain)
+		ren.present(rs, &swapchain)
 	}
 
 	log.info("Shutting down...")
-	ren.flush(&rs, &swapchain)
-	ui_destroy(&rs, &ui)
-	ren.buffer_destroy(&rs, cbuf)
-	ren.shader_destroy(&rs, shader)
+	ren.flush(rs, &swapchain)
+	ui_destroy(rs, &ui)
+	ren.buffer_destroy(rs, cbuf)
+	ren.shader_destroy(rs, shader)
 	ren.destroy_swapchain(&swapchain)
 	ren.destroy_pipeline(&pipeline)
-	ren.destroy(&rs)
+	ren.destroy(rs)
 	log.info("Shutdown complete.")
 }
 
@@ -143,12 +149,12 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 		win.PostQuitMessage(0)
 		run = false
 	case win.WM_SIZE:
-		if ren.valid(rs) {
+		if rs != nil {
 			width := int(win.LOWORD(lparam))
 			height := int(win.HIWORD(lparam))
-			ren.flush(&rs, &swapchain)
+			ren.flush(rs, &swapchain)
 			ren.destroy_swapchain(&swapchain)
-			swapchain = ren.create_swapchain(&rs, hwnd, width, height)
+			swapchain = ren.create_swapchain(rs, hwnd, width, height)
 		}
 	}
 

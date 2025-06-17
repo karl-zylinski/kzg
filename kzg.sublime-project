@@ -22,7 +22,7 @@
 		{
 			"working_dir": "$project_path",
 			"name": "kzg",
-			"cmd": "odin run src -out:kzg.exe -collection:kzg=src -debug -keep-executable",
+			"cmd": "build.bat",
 			"file_regex": "^(.+)\\(([0-9]+):([0-9]+)\\) (.+)$",
 		}
 	],

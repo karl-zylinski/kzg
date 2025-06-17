@@ -1,4 +1,7 @@
 *.sublime-workspace
 *.exe
+*.dll
+*.exp
+*.lib
 *.pdb
 *.rdi
