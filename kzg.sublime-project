@@ -22,7 +22,7 @@
 		{
 			"working_dir": "$project_path",
 			"name": "kzg",
-			"cmd": "build.bat",
+			"cmd": "build.bat && kzg.exe",
 			"file_regex": "^(.+)\\(([0-9]+):([0-9]+)\\) (.+)$",
 		}
 	],
