@@ -23,23 +23,24 @@ plugins_load_all :: proc() {
 			filepath.stem(pff.name) == pf.name {
 				lib, lib_ok := dynlib.load_library(pff.fullpath, false, context.temp_allocator)
 
-				proc_type :: proc() -> typeid
-				proc_load_plugin: proc_type
+				proc_type :: proc(register: proc(type: typeid, api: rawptr)) -> typeid
+				proc_register_apis: proc_type
 
 				if lib_ok {
-					proc_load_plugin = (proc_type)(dynlib.symbol_address(lib, "load_plugin", context.temp_allocator))
+					proc_register_apis = (proc_type)(dynlib.symbol_address(lib, "kzg_register_apis", context.temp_allocator))
 				}
 
-				if proc_load_plugin != nil {
-					plugin_api_type := proc_load_plugin()
-					load_plugin(lib, plugin_api_type)
+				if proc_register_apis != nil {
+					proc_register_apis(register_api)
+					//plugin_api_type := proc_load_plugin()
+					//load_plugin(lib, plugin_api_type)
 				}
 			}
 		}
 	}
 }
 
-load_plugin :: proc(lib: dynlib.Library, t: typeid) {
+/*load_plugin :: proc(lib: dynlib.Library, t: typeid) {
 	api_struct, api_struct_err := mem.alloc(reflect.size_of_typeid(t))
 	log.assertf(api_struct_err == nil, "Error loading plugin: %v", api_struct_err)
 
@@ -58,14 +59,21 @@ load_plugin :: proc(lib: dynlib.Library, t: typeid) {
 	}
 
 	plugin_apis[t] = api
+}*/
+
+register_api :: proc(type: typeid, api: rawptr) {
+	sz := reflect.size_of_typeid(type)
+	api_struct, api_struct_err := mem.alloc(sz)
+	mem.copy(api_struct, api, sz)
+	plugin_apis[type] = api_struct
 }
 
 Plugin_API :: struct {
 	api_struct: rawptr,
 }
 
-plugin_apis: map[typeid]Plugin_API
+plugin_apis: map[typeid]rawptr
 
 get_api :: proc($T: typeid) -> ^T {
-	return (^T)(plugin_apis[T].api_struct)
+	return (^T)(plugin_apis[T])
 }

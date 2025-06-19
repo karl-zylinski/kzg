@@ -33,7 +33,7 @@ ui_reset :: proc(ui: ^UI) {
 	clear(&ui.indices)
 }
 
-ui_create :: proc(rs: ^ren.Renderer_D3D12_State, elements_max: int, indices_max: int) -> UI {
+ui_create :: proc(rs: ^ren.State, elements_max: int, indices_max: int) -> UI {
 	element_buffer := rd3d.buffer_create(rs, elements_max, size_of(UI_Element))
 	element_buffer_map := rd3d.buffer_map(rs, element_buffer)
 	index_buffer := rd3d.buffer_create(rs, indices_max, size_of(u32))
@@ -55,7 +55,7 @@ ui_create :: proc(rs: ^ren.Renderer_D3D12_State, elements_max: int, indices_max:
 	}
 }
 
-ui_destroy :: proc(rs: ^ren.Renderer_D3D12_State, ui: ^UI) {
+ui_destroy :: proc(rs: ^ren.State, ui: ^UI) {
 	rd3d.buffer_destroy(rs, ui.element_buffer)
 	rd3d.buffer_destroy(rs, ui.index_buffer)
 	ui.elements.allocator = ui.dyn_allocator

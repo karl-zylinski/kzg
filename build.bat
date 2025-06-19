@@ -1,5 +1,5 @@
 @echo off
-odin build src/renderer_d3d12 -build-mode:dll -collection:kzg=src -debug
+odin build src/renderer_d3d12 -define:KZG_PLUGIN=true -build-mode:dll -collection:kzg=src -debug
 IF %ERRORLEVEL% NEQ 0 exit /b 1
 
 mkdir plugins

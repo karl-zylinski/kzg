@@ -1,7 +1,10 @@
 
 - plugin system
-	- generate API file: use core:odin to parse and find @export procs and output API file
-
+	- @(api="Name") -- put in `struct Name {}` in API file
+	- @(api_type) -- copy of the struct in api file
+	- @(api_type_opaque) -- empty struct in api file
+	- parse file, find things tagged with these attributes
+	- generate api file, with an exported proc that creates the API
 
 - introduce a separate rendering thread
 	- we could do a job based system where command lists are created as jobs and then submitted

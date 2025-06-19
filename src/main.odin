@@ -18,7 +18,7 @@ Vec3 :: base.Vec3
 
 run: bool
 rd3d: ^ren.Renderer_D3D12
-rs: ^ren.Renderer_D3D12_State
+rs: ^ren.State
 pipeline: ren.Pipeline_Handle
 swapchain: ren.Swapchain_Handle
 custom_context: runtime.Context
