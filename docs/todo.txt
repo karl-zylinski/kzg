@@ -3,7 +3,7 @@
 	- @(api="Name") -- put in `struct Name {}` in API file
 	- @(api_type) -- copy of the struct in api file
 	- @(api_type_opaque) -- empty struct in api file
-	- parse file, find things tagged with these attributes
+	- parse plugin package, find things tagged with these attributes
 	- generate api file, with an exported proc that creates the API
 
 - introduce a separate rendering thread
