@@ -24,12 +24,9 @@ swapchain: ren.Swapchain_Handle
 custom_context: runtime.Context
 
 main :: proc() {
-	rrd3d: ren.Renderer_D3D12
-	_, rd3d_ok := dynlib.initialize_symbols(&rrd3d, "plugins/renderer_d3d12/renderer_d3d12.dll", "", "")
-
-	rd3d = &rrd3d
-
 	context.logger = log.create_console_logger()
+	plugins_load_all()
+	rd3d = get_api(ren.Renderer_D3D12)
 
 	when ODIN_DEBUG {
 		default_allocator := context.allocator

@@ -36,3 +36,8 @@ Renderer_D3D12 :: struct {
 
 	swapchain_size: proc(s: ^Renderer_D3D12_State, swap: Swapchain_Handle) -> base.Vec2i,
 }
+
+@export
+load_plugin :: proc() -> typeid {
+	return Renderer_D3D12
+}
