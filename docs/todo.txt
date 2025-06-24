@@ -1,6 +1,6 @@
 
 - plugin system
-	- somehow get Renderer_D3d12 typename
+	- somehow get Renderer_D3d12 typename -- see hack in plugin_system.odin with Renderer_D3d12 right now.
 	- but it needs to fill it out using reflection?
 	- we can have a proc in the plugin -- but that's just boiler plate
 	- can api.odin have lazy loading procedure in it, that calls a proc in base?
