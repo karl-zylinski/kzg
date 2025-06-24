@@ -23,6 +23,12 @@ Vec3 :: base.Vec3
 
 g_info_queue: ^d3d12.IInfoQueue
 
+@api
+Shader_Handle :: distinct hm.Handle
+Buffer_Handle :: distinct hm.Handle
+Swapchain_Handle :: distinct hm.Handle
+Pipeline_Handle :: distinct hm.Handle
+
 State :: struct {
 	device: ^d3d12.IDevice5,
 	dxgi_factory: ^dxgi.IFactory7,
@@ -99,7 +105,7 @@ Command_List :: struct {
 	list: ^d3d12.IGraphicsCommandList,
 }
 
-@export
+@(api="Renderer_D3D12")
 create :: proc(allocator := context.allocator, loc := #caller_location) -> ^State {
 	log.info("Creating D3D12 renderer.")
 	s := new(State, allocator, loc)
@@ -209,7 +215,7 @@ check :: proc(res: d3d12.HRESULT, message: string, loc := #caller_location) {
 	check_messages(loc)
 }
 
-@export
+@(api="Renderer_D3D12")
 destroy :: proc(s: ^State) {
 	log.info("Destroying D3D12 renderer.")
 	
@@ -234,7 +240,7 @@ destroy :: proc(s: ^State) {
 	s.info_queue->Release()
 }
 
-@export
+@(api="Renderer_D3D12")
 create_swapchain :: proc(s: ^State, hwnd: u64, width: int, height: int) -> Swapchain_Handle {
 	log.infof("Creating swapchain with size %v x %v", width, height)
 	ensure(hwnd != 0, "Invalid window handle")
@@ -310,7 +316,7 @@ create_swapchain :: proc(s: ^State, hwnd: u64, width: int, height: int) -> Swapc
 	return hm.add(&s.swapchains, swap)
 }
 
-@export
+@(api="Renderer_D3D12")
 destroy_swapchain :: proc(s: ^State, sh: Swapchain_Handle) {
 	swap := hm.get(&s.swapchains, sh)
 
@@ -328,7 +334,7 @@ destroy_swapchain :: proc(s: ^State, sh: Swapchain_Handle) {
 	swap.swapchain->Release()
 }
 
-@export
+@(api="Renderer_D3D12")
 create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline_Handle {
 	hr: win.HRESULT
 	pip := Pipeline {
@@ -466,7 +472,7 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline_Han
 	return hm.add(&s.pipelines, pip)
 }
 
-@export
+@(api="Renderer_D3D12")
 destroy_pipeline :: proc(rs: ^State, ph: Pipeline_Handle) {
 	pip := hm.get(&rs.pipelines, ph)
 
@@ -479,7 +485,7 @@ destroy_pipeline :: proc(rs: ^State, ph: Pipeline_Handle) {
 	pip.root_signature->Release()
 }
 
-@export
+@(api="Renderer_D3D12")
 flush :: proc(s: ^State, sh: Swapchain_Handle) {
 	swap := hm.get(&s.swapchains, sh)
 
@@ -503,7 +509,7 @@ wait_for_fence :: proc(s: ^State, fence: ^Fence) {
 	}
 }
 
-@export
+@(api="Renderer_D3D12")
 begin_frame :: proc(s: ^State, sh: Swapchain_Handle) {
 	swap := hm.get(&s.swapchains, sh)
 
@@ -517,7 +523,7 @@ begin_frame :: proc(s: ^State, sh: Swapchain_Handle) {
 	check(hr, "Failed resetting command allocator")
 }
 
-@export
+@(api="Renderer_D3D12")
 draw :: proc(s: ^State, cmd: ^Command_List, index_buffer: Buffer_Handle, n: int) {
 	ib := hm.get(&s.buffers, index_buffer)
 
@@ -536,7 +542,7 @@ draw :: proc(s: ^State, cmd: ^Command_List, index_buffer: Buffer_Handle, n: int)
 	cmd.list->DrawIndexedInstanced(u32(n), 1, 0, 0, 0)
 }
 
-@export
+@(api="Renderer_D3D12")
 create_command_list :: proc(s: ^State, ph: Pipeline_Handle, sh: Swapchain_Handle) -> ^Command_List {
 	pip := hm.get(&s.pipelines, ph)
 
@@ -561,13 +567,13 @@ create_command_list :: proc(s: ^State, ph: Pipeline_Handle, sh: Swapchain_Handle
 	return cmd
 }
 
-@export
+@(api="Renderer_D3D12")
 destroy_command_list :: proc(cmd: ^Command_List) {
 	cmd.list->Release()
 	free(cmd)
 }
 
-@export
+@(api="Renderer_D3D12")
 set_buffer :: proc(rs: ^State, ph: Pipeline_Handle, name: string, h: Buffer_Handle) {
 	p := hm.get(&rs.pipelines, ph)
 
@@ -614,7 +620,7 @@ set_buffer :: proc(rs: ^State, ph: Pipeline_Handle, name: string, h: Buffer_Hand
 	}
 }
 
-@export
+@(api="Renderer_D3D12")
 begin_render_pass :: proc(s: ^State, cmd: ^Command_List) {
 	hr: win.HRESULT
 	hr = cmd.list->Reset(cmd.command_allocator, cmd.pipeline.pipeline)
@@ -677,7 +683,7 @@ begin_render_pass :: proc(s: ^State, cmd: ^Command_List) {
 	cmd.list->ClearRenderTargetView(rtv_handle, &clearcolor, 0, nil)
 }
 
-@export
+@(api="Renderer_D3D12")
 execute_command_list :: proc(s: ^State, cmd: ^Command_List) {
 	hr: win.HRESULT
 
@@ -700,7 +706,7 @@ execute_command_list :: proc(s: ^State, cmd: ^Command_List) {
 	s.command_queue->ExecuteCommandLists(len(cmdlists), (^^d3d12.ICommandList)(&cmdlists[0]))
 }
 
-@export
+@(api="Renderer_D3D12")
 present :: proc(s: ^State, sh: Swapchain_Handle) {
 	swap := hm.get(&s.swapchains, sh)
 
@@ -719,7 +725,7 @@ present :: proc(s: ^State, sh: Swapchain_Handle) {
 	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
 }
 
-@export
+@(api="Renderer_D3D12")
 shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 	shader_size := u32(len(shader_source))
 
@@ -874,7 +880,7 @@ shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 	return hm.add(&s.shaders, shader)
 }
 
-@export
+@(api="Renderer_D3D12")
 shader_destroy :: proc(s: ^State, h: Shader_Handle) {
 	shader := hm.get(&s.shaders, h)
 
@@ -885,7 +891,7 @@ shader_destroy :: proc(s: ^State, h: Shader_Handle) {
 	vmem.arena_destroy(&shader.resources_arena)
 }
 
-@(export, api_name="Renderer_D3D12")
+@(api="Renderer_D3D12")
 buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer_Handle {
 	desc := d3d12.RESOURCE_DESC {
 		Dimension = .BUFFER,
@@ -921,14 +927,14 @@ buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer
 	return hm.add(&s.buffers, b)
 }
 
-@export
+@(api="Renderer_D3D12")
 buffer_destroy :: proc(s: ^State, h: Buffer_Handle) {
 	if b := hm.get(&s.buffers, h); b != nil {
 		b.buf->Release()
 	}
 }
 
-@export
+@(export)
 buffer_map :: proc(s: ^State, h: Buffer_Handle) -> rawptr {
 	if b := hm.get(&s.buffers, h); b != nil {
 		map_start: rawptr
@@ -940,13 +946,14 @@ buffer_map :: proc(s: ^State, h: Buffer_Handle) -> rawptr {
 	return nil
 }
 
+@(api="Renderer_D3D12")
 buffer_unmap :: proc(s: ^State, h: Buffer_Handle) {
 	if b := hm.get(&s.buffers, h); b != nil {
 		b.buf->Unmap(0, nil)
 	}
 }
 
-@export
+@(api="Renderer_D3D12")
 swapchain_size :: proc(s: ^State, sh: Swapchain_Handle) -> base.Vec2i {
 	swap := hm.get(&s.swapchains, sh)
 
@@ -957,7 +964,7 @@ swapchain_size :: proc(s: ^State, sh: Swapchain_Handle) -> base.Vec2i {
 	return {swap.width, swap.height}
 }
 
-@export
+/*@(api="Renderer_D3D12")
 kzg_register_apis :: proc(register: proc(type: typeid, api: rawptr)) {
 	r := Renderer_D3D12 {
 		create = create,
@@ -984,4 +991,4 @@ kzg_register_apis :: proc(register: proc(type: typeid, api: rawptr)) {
 	}
 
 	register(type_of(r), &r)
-}
+}*/

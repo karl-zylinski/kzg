@@ -1,9 +1,14 @@
 package kzg_build_plugins
 
 import os "core:os/os2"
+import os1 "core:os"
 import vmem "core:mem/virtual"
 import "core:log"
 import "core:fmt"
+import "core:odin/parser"
+import "core:odin/ast"
+import "core:strings"
+import "core:slice"
 
 main :: proc() {
 	arena: vmem.Arena
@@ -28,7 +33,7 @@ main :: proc() {
 				"build",
 				fi.name,
 				"-define:KZG_PLUGIN=true",
-				"-custom-attribute=api_name",
+				"-custom-attribute=api",
 				"-build-mode:dll",
 				"-collection:kzg=..",
 				"-debug",
@@ -37,7 +42,139 @@ main :: proc() {
 		}, context.allocator)
 
 		check(err == nil, err)
-		log.ensure(ex_state.exit_code == 0, string(err_out))
+		if ex_state.exit_code != 0 {
+			fmt.eprint(string(err_out))
+			panic("Plugin compilation failed")
+		}
+
+		plug_ast, plug_ast_ok := parser.parse_package_from_path(fi.name)
+
+		log.ensuref(plug_ast_ok, "Could not generate AST for package %v", fi.name)
+
+		a, a_err := os1.open(fmt.tprintf("%v/api.odin", out_dir), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
+
+		check(a_err == nil, a_err)
+
+		fmt.fprintfln(a, "package %v", plug_ast.name)
+
+		API :: struct {
+			entries: [dynamic]string,
+		}
+
+		types: [dynamic]string
+
+		apis: map[string]API
+
+		default_api_name := strings.to_ada_case(plug_ast.name)
+
+		fmt.fprintln(a, "")
+
+		for _, &f in plug_ast.files {
+			for &d in f.decls {
+				#partial switch &dd in d.derived {
+				case ^ast.Value_Decl:
+					add_to_api: bool
+					add_to_api_name: string
+
+					for &a in dd.attributes {
+						for &e in a.elems {
+							name: string
+							value: string
+
+							#partial switch &ed in e.derived {
+							case ^ast.Field_Value:
+								if name_ident, name_ident_ok := ed.field.derived.(^ast.Ident); name_ident_ok {
+									name = name_ident.name
+								}
+
+								if value_lit, value_lit_ok := ed.value.derived.(^ast.Basic_Lit); value_lit_ok {
+									value = strings.trim(value_lit.tok.text, "\"")
+								}
+							case ^ast.Ident:
+								name = ed.name
+							}
+
+							switch name {
+							case "api":
+								add_to_api = true
+								add_to_api_name = value
+							}
+						}
+					}
+
+					if add_to_api {
+						name: string
+
+						for n in dd.names {
+							#partial switch nd in n.derived {
+							case ^ast.Ident:
+								name = nd.name
+							}
+						}
+
+						if name == "" {
+							continue
+						}
+
+						for v in dd.values {
+							#partial switch vd in v.derived {
+							case ^ast.Proc_Lit:
+								type := f.src[vd.type.pos.offset:vd.type.end.offset]
+
+								api_name := add_to_api_name
+
+								if api_name == "" {
+									api_name = default_api_name
+								}
+
+								api := &apis[api_name]
+
+								if api == nil {
+									apis[api_name] = API {}
+									api = &apis[api_name]
+								}
+
+								append(&api.entries, fmt.tprintf("%v: %v,", name, type))
+							case ^ast.Distinct_Type:
+								type := f.src[vd.type.pos.offset:vd.type.end.offset]
+
+								log.info(vd.tok)
+
+								append(&types, fmt.tprintf("%v :: distinct %v", name, type))
+							}
+						}
+					}
+				}
+			}
+		}
+
+		pf :: fmt.fprintf
+		pfln :: fmt.fprintfln
+
+		for t in types {
+			pfln(a, t)
+		}
+
+		pfln(a, "")
+
+		if len(apis) > 0 {
+			apis_sorted, _ := slice.map_entries(apis)
+
+			slice.sort_by(apis_sorted, proc(i, j: slice.Map_Entry(string, API)) -> bool {
+				return i.key < j.key
+			})
+
+			for api in apis_sorted {
+				pfln(a, "%v :: struct {{", api.key)
+
+				for e in api.value.entries {
+					pf(a, "\t")
+					pfln(a, e)
+				}
+
+				pfln(a, "}}")
+			}
+		}
 	}
 }
 
