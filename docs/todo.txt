@@ -1,10 +1,9 @@
 
 - plugin system
-	- @(api="Name") -- put in `struct Name {}` in API file
-	- @(api_type) -- copy of the struct in api file
-	- @(api_type_opaque) -- empty struct in api file
-	- parse plugin package, find things tagged with these attributes
-	- generate api file, with an exported proc that creates the API
+	- somehow get Renderer_D3d12 typename
+	- but it needs to fill it out using reflection?
+	- we can have a proc in the plugin -- but that's just boiler plate
+	- can api.odin have lazy loading procedure in it, that calls a proc in base?
 
 - introduce a separate rendering thread
 	- we could do a job based system where command lists are created as jobs and then submitted

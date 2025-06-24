@@ -17,7 +17,7 @@ Mat4 :: base.Mat4
 Vec3 :: base.Vec3
 
 run: bool
-rd3d: ^ren.Renderer_D3D12
+rd3d: ^ren.Renderer_D3d12
 rs: ^ren.State
 pipeline: ren.Pipeline_Handle
 swapchain: ren.Swapchain_Handle
@@ -26,7 +26,7 @@ custom_context: runtime.Context
 main :: proc() {
 	context.logger = log.create_console_logger()
 	plugins_load_all()
-	rd3d = get_api(ren.Renderer_D3D12)
+	rd3d = get_api(ren.Renderer_D3d12)
 
 	when ODIN_DEBUG {
 		default_allocator := context.allocator

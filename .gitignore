@@ -7,3 +7,5 @@
 *.rdi
 plugins/
 !src/plugins/
+src/plugins/**/bin
+src/scraps

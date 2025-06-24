@@ -33,7 +33,7 @@ main :: proc() {
 				"build",
 				fi.name,
 				"-define:KZG_PLUGIN=true",
-				"-custom-attribute=api",
+				"-custom-attribute=opaque",
 				"-build-mode:dll",
 				"-collection:kzg=..",
 				"-debug",
@@ -55,25 +55,31 @@ main :: proc() {
 
 		check(a_err == nil, a_err)
 
-		fmt.fprintfln(a, "package %v", plug_ast.name)
+		base_api_file := fmt.tprintf("%v/api_types.odin", fi.name)
+		api_file, api_file_ok := os1.read_entire_file(base_api_file)
 
+		if api_file_ok {
+			fmt.fprint(a, string(api_file))
+		} else {
+			fmt.fprintfln(a, "package %v", plug_ast.name)			
+		}
+		
 		API :: struct {
 			entries: [dynamic]string,
 		}
 
-		types: [dynamic]string
+		opaque_types: [dynamic]string
 
 		apis: map[string]API
 
 		default_api_name := strings.to_ada_case(plug_ast.name)
-
-		fmt.fprintln(a, "")
 
 		for _, &f in plug_ast.files {
 			for &d in f.decls {
 				#partial switch &dd in d.derived {
 				case ^ast.Value_Decl:
 					add_to_api: bool
+					add_to_api_opaque: bool
 					add_to_api_name: string
 
 					for &a in dd.attributes {
@@ -95,9 +101,12 @@ main :: proc() {
 							}
 
 							switch name {
-							case "api":
+							case "export":
 								add_to_api = true
 								add_to_api_name = value
+							case "opaque":
+								add_to_api = true
+								add_to_api_opaque = true
 							}
 						}
 					}
@@ -116,31 +125,29 @@ main :: proc() {
 							continue
 						}
 
-						for v in dd.values {
-							#partial switch vd in v.derived {
-							case ^ast.Proc_Lit:
-								type := f.src[vd.type.pos.offset:vd.type.end.offset]
+						if add_to_api_opaque {
+							append(&opaque_types, name)
+						} else {
+							for v in dd.values {
+								#partial switch vd in v.derived {
+								case ^ast.Proc_Lit:
+									type := f.src[vd.type.pos.offset:vd.type.end.offset]
 
-								api_name := add_to_api_name
+									api_name := add_to_api_name
 
-								if api_name == "" {
-									api_name = default_api_name
+									if api_name == "" {
+										api_name = default_api_name
+									}
+
+									api := &apis[api_name]
+
+									if api == nil {
+										apis[api_name] = API {}
+										api = &apis[api_name]
+									}
+
+									append(&api.entries, fmt.tprintf("%v: %v,", name, type))
 								}
-
-								api := &apis[api_name]
-
-								if api == nil {
-									apis[api_name] = API {}
-									api = &apis[api_name]
-								}
-
-								append(&api.entries, fmt.tprintf("%v: %v,", name, type))
-							case ^ast.Distinct_Type:
-								type := f.src[vd.type.pos.offset:vd.type.end.offset]
-
-								log.info(vd.tok)
-
-								append(&types, fmt.tprintf("%v :: distinct %v", name, type))
 							}
 						}
 					}
@@ -151,8 +158,9 @@ main :: proc() {
 		pf :: fmt.fprintf
 		pfln :: fmt.fprintfln
 
-		for t in types {
-			pfln(a, t)
+		for t in opaque_types {
+			pf(a, t)
+			pfln(a, " :: struct {{}}")
 		}
 
 		pfln(a, "")
@@ -174,6 +182,16 @@ main :: proc() {
 
 				pfln(a, "}}")
 			}
+
+			pfln(a, "")
+			
+			pfln(a, "apis_to_load := []typeid {{")
+			
+			for api in apis_sorted {
+				pfln(a, "\t%v,", api.key)
+			}
+
+			pf(a, "}}")
 		}
 	}
 }
