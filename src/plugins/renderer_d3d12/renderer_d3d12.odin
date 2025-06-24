@@ -885,7 +885,7 @@ shader_destroy :: proc(s: ^State, h: Shader_Handle) {
 	vmem.arena_destroy(&shader.resources_arena)
 }
 
-@export
+@(export, api_name="Renderer_D3D12")
 buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer_Handle {
 	desc := d3d12.RESOURCE_DESC {
 		Dimension = .BUFFER,
