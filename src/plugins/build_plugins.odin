@@ -24,7 +24,8 @@ main :: proc() {
 			continue
 		}
 
-		out_dir := fmt.tprintf("%v/bin", fi.name)
+		os.make_directory("../../plugins")
+		out_dir := fmt.tprintf("../../plugins/%v", fi.name)
 		os.make_directory(out_dir)
 
 		plug_ast, plug_ast_ok := parser.parse_package_from_path(fi.name)
@@ -32,7 +33,6 @@ main :: proc() {
 		log.ensuref(plug_ast_ok, "Could not generate AST for package %v", fi.name)
 
 		a, a_err := os1.open(fmt.tprintf("%v/api.odin", out_dir), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
-		defer os1.close(a)
 
 		check(a_err == nil, a_err)
 
@@ -216,7 +216,14 @@ main :: proc() {
 			pf(lo, "}}")
 		}
 		
+		os1.close(a)
 		os1.close(lo)
+	}
+
+	for fi in file_infos {
+		if fi.type != .Directory {
+			continue
+		}
 
 		ex_state, _, err_out, err := os.process_exec({
 			command = {
@@ -229,7 +236,7 @@ main :: proc() {
 				"-collection:kzg=..",
 				"-collection:plugins=../../plugins",
 				"-debug",
-				fmt.tprintf("-out:%v/%v.dll", out_dir, fi.name),
+				fmt.tprintf("-out:../../plugins/%v/%v.dll", fi.name, fi.name),
 			},
 		}, context.allocator)
 
