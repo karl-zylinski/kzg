@@ -24,32 +24,18 @@ plugins_load_all :: proc() {
 			filepath.stem(pff.name) == pf.name {
 				lib, lib_ok := dynlib.load_library(pff.fullpath, false, context.temp_allocator)
 
-				proc_type :: proc(register: proc(type: typeid, api: rawptr)) -> typeid
-				proc_register_apis: proc_type
+				plugin_loaded_proc :: proc(register: proc(type: typeid, api: rawptr))
 
 				if lib_ok {
-					load_plugin(lib, renderer_d3d12.Renderer_D3d12)
+					plugin_loaded := (plugin_loaded_proc)(dynlib.symbol_address(lib, "kzg_plugin_loaded"))
+
+					if plugin_loaded != nil {
+						plugin_loaded(register_api)
+					}
 				}
 			}
 		}
 	}
-}
-
-load_plugin :: proc(lib: dynlib.Library, t: typeid) {
-	api_struct, api_struct_err := mem.alloc(reflect.size_of_typeid(t))
-	log.assertf(api_struct_err == nil, "Error loading plugin: %v", api_struct_err)
-
-	for field in reflect.struct_fields_zipped(t) {
-		if !(reflect.is_procedure(field.type) || reflect.is_pointer(field.type)) {
-			continue
-		}
-
-		sym_ptr := dynlib.symbol_address(lib, field.name) or_continue
-		field_ptr := rawptr(uintptr(api_struct) + field.offset)
-		(^rawptr)(field_ptr)^ = sym_ptr
-	}
-
-	plugin_apis[t] = api_struct
 }
 
 register_api :: proc(type: typeid, api: rawptr) {

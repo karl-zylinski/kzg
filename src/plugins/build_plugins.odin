@@ -27,31 +27,12 @@ main :: proc() {
 		out_dir := fmt.tprintf("%v/bin", fi.name)
 		os.make_directory(out_dir)
 
-		ex_state, _, err_out, err := os.process_exec({
-			command = {
-				"odin",
-				"build",
-				fi.name,
-				"-define:KZG_PLUGIN=true",
-				"-custom-attribute=opaque",
-				"-build-mode:dll",
-				"-collection:kzg=..",
-				"-debug",
-				fmt.tprintf("-out:%v/%v.dll", out_dir, fi.name),
-			},
-		}, context.allocator)
-
-		check(err == nil, err)
-		if ex_state.exit_code != 0 {
-			fmt.eprint(string(err_out))
-			panic("Plugin compilation failed")
-		}
-
 		plug_ast, plug_ast_ok := parser.parse_package_from_path(fi.name)
 
 		log.ensuref(plug_ast_ok, "Could not generate AST for package %v", fi.name)
 
 		a, a_err := os1.open(fmt.tprintf("%v/api.odin", out_dir), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
+		defer os1.close(a)
 
 		check(a_err == nil, a_err)
 
@@ -63,9 +44,14 @@ main :: proc() {
 		} else {
 			fmt.fprintfln(a, "package %v", plug_ast.name)			
 		}
+
+		API_Entry :: struct {
+			name: string,
+			type: string,
+		}
 		
 		API :: struct {
-			entries: [dynamic]string,
+			entries: [dynamic]API_Entry,
 		}
 
 		opaque_types: [dynamic]string
@@ -101,7 +87,7 @@ main :: proc() {
 							}
 
 							switch name {
-							case "export":
+							case "api":
 								add_to_api = true
 								add_to_api_name = value
 							case "opaque":
@@ -146,7 +132,7 @@ main :: proc() {
 										api = &apis[api_name]
 									}
 
-									append(&api.entries, fmt.tprintf("%v: %v,", name, type))
+									append(&api.entries, API_Entry { name = name, type = type })
 								}
 							}
 						}
@@ -163,6 +149,18 @@ main :: proc() {
 			pfln(a, " :: struct {{}}")
 		}
 
+		loader_filename := fmt.tprintf("%v/api_loader.odin", fi.name)
+		lo, loader_out_err := os1.open(loader_filename, os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644)
+
+		check(loader_out_err == nil, loader_out_err)
+
+		pfln(lo, "package %v", plug_ast.name)
+
+		pfln(lo, "")
+
+		pfln(lo, "import hm \"kzg:base/handle_map\"")
+		pfln(lo, "import \"kzg:base\"")
+		
 		pfln(a, "")
 
 		if len(apis) > 0 {
@@ -172,26 +170,73 @@ main :: proc() {
 				return i.key < j.key
 			})
 
+			// api builder
+			ab := strings.builder_make()
+
 			for api in apis_sorted {
-				pfln(a, "%v :: struct {{", api.key)
+				strings.write_string(&ab, api.key)
+				strings.write_string(&ab, " :: struct {{\n")
 
 				for e in api.value.entries {
-					pf(a, "\t")
-					pfln(a, e)
+					strings.write_rune(&ab, '\t')
+					strings.write_string(&ab, e.name)
+					strings.write_string(&ab, ": ")
+					strings.write_string(&ab, e.type)
+					strings.write_string(&ab, ",\n")
 				}
 
-				pfln(a, "}}")
+				strings.write_string(&ab, "}")
 			}
+
+			apis := strings.to_string(ab)
+			pfln(a, apis)
 
 			pfln(a, "")
-			
-			pfln(a, "apis_to_load := []typeid {{")
-			
-			for api in apis_sorted {
-				pfln(a, "\t%v,", api.key)
+
+			pfln(lo, "")
+
+			pfln(lo, apis)
+
+			pfln(lo, "")
+
+			pfln(lo, "@export\nkzg_plugin_loaded :: proc(register_api: proc(T: typeid, api: rawptr)) {{")
+				
+			for api, idx in apis_sorted {
+				pfln(lo, "\ta%v := %v {{", idx, api.key)
+
+				for e in api.value.entries {
+					pfln(lo, "\t\t%v = %v,", e.name, e.name)
+				}
+
+				pfln(lo, "\t}}\n")
+
+				pfln(lo, "\tregister_api(%v, &a%v)", api.key, idx)
 			}
 
-			pf(a, "}}")
+			pf(lo, "}}")
+		}
+		
+		os1.close(lo)
+
+		ex_state, _, err_out, err := os.process_exec({
+			command = {
+				"odin",
+				"build",
+				fi.name,
+				"-define:KZG_PLUGIN=true",
+				"-custom-attribute=opaque",
+				"-custom-attribute=api",
+				"-build-mode:dll",
+				"-collection:kzg=..",
+				"-debug",
+				fmt.tprintf("-out:%v/%v.dll", out_dir, fi.name),
+			},
+		}, context.allocator)
+
+		check(err == nil, err)
+		if ex_state.exit_code != 0 {
+			fmt.eprint(string(err_out))
+			panic("Plugin compilation failed")
 		}
 	}
 }
