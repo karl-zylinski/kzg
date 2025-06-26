@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:log"
 import "core:mem"
 import ren "plugins:renderer_d3d12"
+import th "plugins:thingy"
 import "kzg:base"
 import win "core:sys/windows"
 import sa "core:container/small_array"
@@ -25,8 +26,11 @@ custom_context: runtime.Context
 
 main :: proc() {
 	context.logger = log.create_console_logger()
-	plugins_load_all()
-	rd3d = get_api(ren.Renderer_D3d12)
+	base.plugins_load_all()
+	rd3d = base.get_api(ren.Renderer_D3d12)
+	t := base.get_api(th.Thingy)
+
+	t.hi()
 
 	when ODIN_DEBUG {
 		default_allocator := context.allocator
