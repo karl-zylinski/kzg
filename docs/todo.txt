@@ -1,9 +1,9 @@
 
 - plugin system
-	- somehow get Renderer_D3d12 typename -- see hack in plugin_system.odin with Renderer_D3d12 right now.
-	- but it needs to fill it out using reflection?
-	- we can have a proc in the plugin -- but that's just boiler plate
-	- can api.odin have lazy loading procedure in it, that calls a proc in base?
+	- Move types from `api_types.odin` to normal files and make them use some @api attribute. Make the whole type print into the API file
+	- Rename `api_types.odin` to `api_imports.odin`... I think?
+	- Try reloading a plugin when the DLL changes on disk.
+		- Maybe we can reload the DLL that uses it too if the API struct changes (since the API struct becomes part of the import)
 
 - introduce a separate rendering thread
 	- we could do a job based system where command lists are created as jobs and then submitted
