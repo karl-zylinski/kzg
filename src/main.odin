@@ -28,9 +28,8 @@ main :: proc() {
 	context.logger = log.create_console_logger()
 	base.plugins_load_all()
 	rd3d_api = base.get_api(rd3d.API)
-	t := base.get_api(th.API)
-
-	t.hi()
+	test_api := base.get_api(th.API)
+	test_api.hi()
 
 	when ODIN_DEBUG {
 		default_allocator := context.allocator
