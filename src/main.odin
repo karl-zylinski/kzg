@@ -18,16 +18,30 @@ Mat4 :: base.Mat4
 Vec3 :: base.Vec3
 
 run: bool
-rd3d_api: ^rd3d.API
+rd3d_api: API_Instance(rd3d.API, rd3d.State)
 rd3d_state: ^rd3d.State
 pipeline: rd3d.Pipeline_Handle
 swapchain: rd3d.Swapchain_Handle
 custom_context: runtime.Context
 
+API_Instance :: struct($API_Type: typeid, $State_Type: typeid) {
+	using state: ^State_Type,
+	using api: ^API_Type,
+}
+
+create_api_instance :: proc($Api_Type: typeid, $State_Type: typeid, allocator := context.allocator, loc := #caller_location) -> API_Instance(Api_Type, State_Type) {
+	api := base.get_api(Api_Type)
+	state := api.create(allocator, loc)
+
+	return API_Instance(Api_Type, State_Type) {
+		state = state,
+		api = api,		
+	}
+}
+
 main :: proc() {
 	context.logger = log.create_console_logger()
 	base.plugins_load_all()
-	rd3d_api = base.get_api(rd3d.API)
 	test_api := base.get_api(th.API)
 	test_api.hi()
 
@@ -72,20 +86,21 @@ main :: proc() {
 
 	assert(hwnd != nil, "win: Window creation failed")
 
-	rd3d_state = rd3d_api.create()
+	rd3d_api = create_api_instance(rd3d.API, rd3d.State)
+	rd3d_state = rd3d_api.state
 
 	shader_source := string(#load("shader.hlsl"))
-	shader := rd3d_api.shader_create(rd3d_state, shader_source)
-	pipeline := rd3d_api.create_pipeline(rd3d_state, shader)
-	swapchain = rd3d_api.create_swapchain(rd3d_state, transmute(u64)(hwnd), DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
-	ui := ui_create(rd3d_state, 2048, 2048)
+	shader := rd3d_api->shader_create(shader_source)
+	pipeline := rd3d_api->create_pipeline(shader)
+	swapchain = rd3d_api->create_swapchain(transmute(u64)(hwnd), DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+	ui := ui_create(rd3d_api, 2048, 2048)
 
 	Constant_Buffer :: struct #align(256) {
 		view_matrix: Mat4,
 	}
 
-	cbuf := rd3d_api.buffer_create(rd3d_state, 1, size_of(Constant_Buffer))
-	cbuf_map := rd3d_api.buffer_map(rd3d_state, cbuf)
+	cbuf := rd3d_api->buffer_create(1, size_of(Constant_Buffer))
+	cbuf_map := rd3d_api->buffer_map(cbuf)
 	
 	msg: win.MSG
 
@@ -97,7 +112,7 @@ main :: proc() {
 
 		ui_reset(&ui)
 
-		swap_size := rd3d_api.swapchain_size(rd3d_state, swapchain)
+		swap_size := rd3d_api->swapchain_size(swapchain)
 		sw := f32(swap_size.x)
 		sh := f32(swap_size.y)
 
@@ -114,8 +129,8 @@ main :: proc() {
 
 		mem.copy(cbuf_map, &cb, size_of(cb))
 
-		rd3d_api.set_buffer(rd3d_state, pipeline, "constant_buffer", cbuf)
-		rd3d_api.set_buffer(rd3d_state, pipeline, "ui_elements", ui.element_buffer)
+		rd3d_api->set_buffer(pipeline, "constant_buffer", cbuf)
+		rd3d_api->set_buffer(pipeline, "ui_elements", ui.element_buffer)
 
 		ui_draw_rectangle(&ui, rect, COLOR_PANEL_BACKGROUND)
 
@@ -123,24 +138,24 @@ main :: proc() {
 
 		ui_draw_rectangle(&ui, toolbar, COLOR_TOOLBAR)
 
-		rd3d_api.begin_frame(rd3d_state, swapchain)
-		cmdlist := rd3d_api.create_command_list(rd3d_state, pipeline, swapchain)
-		rd3d_api.begin_render_pass(rd3d_state, cmdlist)
+		rd3d_api->begin_frame(swapchain)
+		cmdlist := rd3d_api->create_command_list(pipeline, swapchain)
+		rd3d_api->begin_render_pass(cmdlist)
 		ui_commit(&ui)
-		rd3d_api.draw(rd3d_state, cmdlist, ui.index_buffer, len(ui.indices))
-		rd3d_api.execute_command_list(rd3d_state, cmdlist)
-		rd3d_api.destroy_command_list(cmdlist)
-		rd3d_api.present(rd3d_state, swapchain)
+		rd3d_api->draw(cmdlist, ui.index_buffer, len(ui.indices))
+		rd3d_api->execute_command_list(cmdlist)
+		rd3d_api.api.destroy_command_list(cmdlist)
+		rd3d_api->present(swapchain)
 	}
 
 	log.info("Shutting down...")
-	rd3d_api.flush(rd3d_state, swapchain)
-	ui_destroy(rd3d_state, &ui)
-	rd3d_api.buffer_destroy(rd3d_state, cbuf)
-	rd3d_api.shader_destroy(rd3d_state, shader)
-	rd3d_api.destroy_swapchain(rd3d_state, swapchain)
-	rd3d_api.destroy_pipeline(rd3d_state, pipeline)
-	rd3d_api.destroy(rd3d_state)
+	rd3d_api->flush(swapchain)
+	ui_destroy(rd3d_api, &ui)
+	rd3d_api->buffer_destroy(cbuf)
+	rd3d_api->shader_destroy(shader)
+	rd3d_api->destroy_swapchain(swapchain)
+	rd3d_api->destroy_pipeline(pipeline)
+	rd3d_api->destroy()
 	log.info("Shutdown complete.")
 }
 
@@ -154,9 +169,9 @@ window_proc :: proc "stdcall" (hwnd: win.HWND, msg: win.UINT, wparam: win.WPARAM
 		if rd3d_state != nil {
 			width := int(win.LOWORD(lparam))
 			height := int(win.HIWORD(lparam))
-			rd3d_api.flush(rd3d_state, swapchain)
-			rd3d_api.destroy_swapchain(rd3d_state, swapchain)
-			swapchain = rd3d_api.create_swapchain(rd3d_state, transmute(u64)hwnd, width, height)
+			rd3d_api->flush(swapchain)
+			rd3d_api->destroy_swapchain(swapchain)
+			swapchain = rd3d_api->create_swapchain(transmute(u64)hwnd, width, height)
 		}
 	}
 

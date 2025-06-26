@@ -960,32 +960,3 @@ swapchain_size :: proc(s: ^State, sh: Swapchain_Handle) -> base.Vec2i {
 	
 	return {swap.width, swap.height}
 }
-
-/*@api
-kzg_register_apis :: proc(register: proc(type: typeid, api: rawptr)) {
-	r := Renderer_D3D12 {
-		create = create,
-		shader_create = shader_create,
-		create_pipeline = create_pipeline,
-		create_swapchain = create_swapchain,
-		buffer_create = buffer_create,
-		buffer_map = buffer_map,
-		set_buffer = set_buffer,
-		begin_frame = begin_frame,
-		create_command_list = create_command_list,
-		begin_render_pass = begin_render_pass,
-		draw = draw,
-		execute_command_list = execute_command_list,
-		destroy_command_list = destroy_command_list,
-		present = present,
-		flush = flush,
-		buffer_destroy = buffer_destroy,
-		shader_destroy = shader_destroy,
-		destroy_swapchain = destroy_swapchain,
-		destroy_pipeline = destroy_pipeline,
-		destroy = destroy,
-		swapchain_size = swapchain_size,
-	}
-
-	register(type_of(r), &r)
-}*/
