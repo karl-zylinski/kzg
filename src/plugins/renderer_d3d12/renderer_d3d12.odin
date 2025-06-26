@@ -565,7 +565,7 @@ create_command_list :: proc(s: ^State, ph: Pipeline_Handle, sh: Swapchain_Handle
 }
 
 @api
-destroy_command_list :: proc(cmd: ^Command_List) {
+destroy_command_list :: proc(rs: ^State, cmd: ^Command_List) {
 	cmd.list->Release()
 	free(cmd)
 }

@@ -144,7 +144,7 @@ main :: proc() {
 		ui_commit(&ui)
 		rd3d_api->draw(cmdlist, ui.index_buffer, len(ui.indices))
 		rd3d_api->execute_command_list(cmdlist)
-		rd3d_api.api.destroy_command_list(cmdlist)
+		rd3d_api->destroy_command_list(cmdlist)
 		rd3d_api->present(swapchain)
 	}
 

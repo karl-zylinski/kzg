@@ -14,7 +14,7 @@ API :: struct {
 	begin_frame: proc(s: ^State, sh: Swapchain_Handle),
 	draw: proc(s: ^State, cmd: ^Command_List, index_buffer: Buffer_Handle, n: int),
 	create_command_list: proc(s: ^State, ph: Pipeline_Handle, sh: Swapchain_Handle) -> ^Command_List,
-	destroy_command_list: proc(cmd: ^Command_List),
+	destroy_command_list: proc(rs: ^State, cmd: ^Command_List),
 	set_buffer: proc(rs: ^State, ph: Pipeline_Handle, name: string, h: Buffer_Handle),
 	begin_render_pass: proc(s: ^State, cmd: ^Command_List),
 	execute_command_list: proc(s: ^State, cmd: ^Command_List),
