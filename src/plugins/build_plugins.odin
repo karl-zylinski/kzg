@@ -58,7 +58,7 @@ main :: proc() {
 
 		apis: map[string]API
 
-		default_api_name := strings.to_ada_case(plug_ast.name)
+		default_api_name := "API"//strings.to_ada_case(plug_ast.name)
 
 		for _, &f in plug_ast.files {
 			for &d in f.decls {

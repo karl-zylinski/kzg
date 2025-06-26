@@ -3,7 +3,7 @@ package renderer_d3d12
 import hm "kzg:base/handle_map"
 import "kzg:base"
 
-Renderer_D3d12 :: struct {
+API :: struct {
 	create: proc(allocator := context.allocator, loc := #caller_location) -> ^State,
 	destroy: proc(s: ^State),
 	create_swapchain: proc(s: ^State, hwnd: u64, width: int, height: int) -> Swapchain_Handle,
@@ -30,7 +30,7 @@ Renderer_D3d12 :: struct {
 
 @export
 kzg_plugin_loaded :: proc(register_api: proc(T: typeid, api: rawptr)) {
-	a0 := Renderer_D3d12 {
+	a0 := API {
 		create = create,
 		destroy = destroy,
 		create_swapchain = create_swapchain,
@@ -55,5 +55,5 @@ kzg_plugin_loaded :: proc(register_api: proc(T: typeid, api: rawptr)) {
 		swapchain_size = swapchain_size,
 	}
 
-	register_api(Renderer_D3d12, &a0)
+	register_api(API, &a0)
 }
