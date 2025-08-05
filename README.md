@@ -15,8 +15,6 @@ Upcoming milestones:
 ## TODO
 
 - plugin system
-	- Move types from `api_types.odin` to normal files and make them use some @api attribute. Make the whole type print into the API file
-	- Rename `api_types.odin` to `api_imports.odin`... I think?
 	- Try reloading a plugin when the DLL changes on disk.
 		- Maybe we can reload the DLL that uses it too if the API struct changes (since the API struct becomes part of the import)
 
