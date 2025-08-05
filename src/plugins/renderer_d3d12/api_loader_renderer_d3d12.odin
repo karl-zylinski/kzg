@@ -19,6 +19,9 @@ API :: struct {
 	begin_render_pass: proc(s: ^State, cmd: ^Command_List),
 	execute_command_list: proc(s: ^State, cmd: ^Command_List),
 	present: proc(s: ^State, sh: Swapchain_Handle),
+
+	/* Load the HLSL source in `shader_source` and compiles it using DXC. Uses reflection to find
+	resources within the shader. */
 	shader_create: proc(s: ^State, shader_source: string) -> Shader_Handle,
 	shader_destroy: proc(s: ^State, h: Shader_Handle),
 	buffer_create: proc(s: ^State, num_elements: int, element_size: int) -> Buffer_Handle,

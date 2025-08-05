@@ -6,7 +6,7 @@ import "kzg:base"
 
 @api
 hi :: proc() {
-	fmt.println("HI")
+	fmt.println("WAWA?")
 
 	rd3d := base.get_api(ren.API)
 

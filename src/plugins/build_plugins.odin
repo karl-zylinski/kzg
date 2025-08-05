@@ -49,6 +49,7 @@ main :: proc() {
 		API_Entry :: struct {
 			name: string,
 			type: string,
+			docs: string,
 		}
 		
 		API :: struct {
@@ -126,7 +127,8 @@ main :: proc() {
 								case ^ast.Proc_Lit:
 									name := f.src[dd.names[vi].pos.offset:dd.names[vi].end.offset]
 									type := f.src[vd.type.pos.offset:vd.type.end.offset]
-									append(&api.entries, API_Entry { name = name, type = type })
+									docs := dd.docs == nil ? "" : f.src[dd.docs.pos.offset:dd.docs.end.offset]
+									append(&api.entries, API_Entry { name = name, type = type, docs = docs })
 									processed = true
 								}
 							}
@@ -170,7 +172,18 @@ main :: proc() {
 				strings.write_string(&ab, api.key)
 				strings.write_string(&ab, " :: struct {{\n")
 
-				for e in api.value.entries {
+				for e, e_idx in api.value.entries {
+					if e.docs != "" {
+						if e_idx != 0 {
+							strings.write_string(&ab, "\n")
+						}
+
+						strings.write_rune(&ab, '\t')
+						indented_docs, _ := strings.replace_all(e.docs, "\n", "\n\t")
+						strings.write_string(&ab, indented_docs)
+						strings.write_string(&ab, "\n")
+					}
+
 					strings.write_rune(&ab, '\t')
 					strings.write_string(&ab, e.name)
 					strings.write_string(&ab, ": ")

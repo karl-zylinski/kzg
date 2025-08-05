@@ -727,8 +727,9 @@ present :: proc(s: ^State, sh: Swapchain_Handle) {
 	swap.frame_index = swap.swapchain->GetCurrentBackBufferIndex()
 }
 
-@api
-shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
+/* Load the HLSL source in `shader_source` and compiles it using DXC. Uses reflection to find
+resources within the shader. */
+@api shader_create :: proc(s: ^State, shader_source: string) -> Shader_Handle {
 	shader_size := u32(len(shader_source))
 
 	vs_compiled: ^dxc.IBlob

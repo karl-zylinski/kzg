@@ -14,9 +14,11 @@ Upcoming milestones:
 
 ## TODO
 
-- plugin system
-	- Try reloading a plugin when the DLL changes on disk.
-		- Maybe we can reload the DLL that uses it too if the API struct changes (since the API struct becomes part of the import)
+- hot reload
+	- what if plugin API changes size? Then mem.copy in plugin_system.odin doesn't work.
+		- preallocate maximum size for each API, or somehow hand out pointer to pointer... Perhaps the `get_api` can be fed a pointer it writes into instead of the other way around?
+	- make debugging work (write PDB to unique path)
+	- remove the runtime copies on start and shutdown
 
 - introduce a separate rendering thread
 	- we could do a job based system where command lists are created as jobs and then submitted

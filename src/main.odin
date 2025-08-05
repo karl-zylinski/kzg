@@ -107,6 +107,8 @@ main :: proc() {
 	msg: win.MSG
 
 	for run {
+		base.refresh_all_plugins()
+		
 		for win.PeekMessageW(&msg, nil, 0, 0, win.PM_REMOVE) {
 			win.TranslateMessage(&msg)
 			win.DispatchMessageW(&msg)			
