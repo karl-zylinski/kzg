@@ -18,6 +18,7 @@ Mat4 :: base.Mat4
 Vec3 :: base.Vec3
 
 run: bool
+api_storage: base.API_Storage
 rd3d_api: API_Instance(rd3d.API, rd3d.State)
 rd3d_state: ^rd3d.State
 pipeline: rd3d.Pipeline_Handle
@@ -41,7 +42,8 @@ create_api_instance :: proc($Api_Type: typeid, $State_Type: typeid, allocator :=
 
 main :: proc() {
 	context.logger = log.create_console_logger()
-	base.plugins_load_all()
+	base.api_storage = &api_storage
+	base.load_all_plugins()
 	test_api := base.get_api(th.API)
 	test_api.hi()
 

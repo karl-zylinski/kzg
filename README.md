@@ -15,7 +15,6 @@ Upcoming milestones:
 ## TODO
 
 - plugin system
-	- base.get_api doesn't work in thingy.odin -- this is because the global in there gets compiled into the plugin. Instead the kzg_plugin_loaded needs to be fed a struct that represents the plugin API API. On it you can register your plugin and fetch plugins. Fetching a plugin that is not yet registered will make it but give you a nil pointer that will later be filled out.
 	- Move types from `api_types.odin` to normal files and make them use some @api attribute. Make the whole type print into the API file
 	- Rename `api_types.odin` to `api_imports.odin`... I think?
 	- Try reloading a plugin when the DLL changes on disk.

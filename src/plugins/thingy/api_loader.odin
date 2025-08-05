@@ -8,10 +8,12 @@ API :: struct {
 }
 
 @export
-kzg_plugin_loaded :: proc(register_api: proc(T: typeid, api: rawptr)) {
+kzg_plugin_loaded :: proc(api_storage: ^base.API_Storage) {
+	base.api_storage = api_storage
+
 	a0 := API {
 		hi = hi,
 	}
 
-	register_api(API, &a0)
+	base.register_api(API, &a0)
 }

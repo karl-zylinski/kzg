@@ -199,7 +199,8 @@ main :: proc() {
 
 			pfln(lo, "")
 
-			pfln(lo, "@export\nkzg_plugin_loaded :: proc(register_api: proc(T: typeid, api: rawptr)) {{")
+			pfln(lo, "@export\nkzg_plugin_loaded :: proc(api_storage: ^base.API_Storage) {{")
+			pfln(lo, "\tbase.api_storage = api_storage\n")
 				
 			for api, idx in apis_sorted {
 				pfln(lo, "\ta%v := %v {{", idx, api.key)
@@ -210,7 +211,7 @@ main :: proc() {
 
 				pfln(lo, "\t}}\n")
 
-				pfln(lo, "\tregister_api(%v, &a%v)", api.key, idx)
+				pfln(lo, "\tbase.register_api(%v, &a%v)", api.key, idx)
 			}
 
 			pf(lo, "}}")
