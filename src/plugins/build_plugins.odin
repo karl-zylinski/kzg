@@ -98,22 +98,14 @@ main :: proc() {
 					}
 
 					if add_to_api {
-						name: string
-
-						for n in dd.names {
-							#partial switch nd in n.derived {
-							case ^ast.Ident:
-								name = nd.name
-							}
-						}
-
-						if name == "" {
-							continue
-						}
-
 						if add_to_api_opaque {
-							append(&types, fmt.tprintf("%v :: struct{{}}", name))
+							for n in dd.names {
+								name := f.src[n.pos.offset:n.end.offset]
+								append(&types, fmt.tprintf("%v :: struct{{}}", name))
+							}
 						} else {
+							// The API name is only used for procedures. It's the struct in which the procedure
+							// pointers end up.
 							api_name := add_to_api_name
 
 							if api_name == "" {
@@ -129,9 +121,10 @@ main :: proc() {
 
 							processed := false
 
-							for v in dd.values {
+							for v, vi in dd.values {
 								#partial switch vd in v.derived {
 								case ^ast.Proc_Lit:
+									name := f.src[dd.names[vi].pos.offset:dd.names[vi].end.offset]
 									type := f.src[vd.type.pos.offset:vd.type.end.offset]
 									append(&api.entries, API_Entry { name = name, type = type })
 									processed = true
