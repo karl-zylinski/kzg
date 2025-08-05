@@ -1,7 +1,7 @@
 package renderer_d3d12
 
-import hm "kzg:base/handle_map"
 import "kzg:base"
+import hm "kzg:base/handle_map"
 
 API :: struct {
 	create: proc(allocator := context.allocator, loc := #caller_location) -> ^State,

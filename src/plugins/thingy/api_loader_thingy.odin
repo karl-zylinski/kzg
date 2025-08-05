@@ -1,7 +1,7 @@
 package thingy
 
-import hm "kzg:base/handle_map"
 import "kzg:base"
+import hm "kzg:base/handle_map"
 
 API :: struct {
 	hi: proc(),

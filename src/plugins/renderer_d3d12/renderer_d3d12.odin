@@ -14,8 +14,8 @@ import "vendor:directx/dxc"
 import d3d12 "vendor:directx/d3d12"
 import dxgi "vendor:directx/dxgi"
 
-import hm "kzg:base/handle_map"
 import "kzg:base"
+import hm "kzg:base/handle_map"
 
 NUM_RENDERTARGETS :: 2
 
@@ -23,7 +23,12 @@ Vec3 :: base.Vec3
 
 g_info_queue: ^d3d12.IInfoQueue
 
-@opaque
+@api Shader_Handle :: distinct hm.Handle
+@api Buffer_Handle :: distinct hm.Handle
+@api Swapchain_Handle :: distinct hm.Handle
+@api Pipeline_Handle :: distinct hm.Handle
+
+@api_opaque
 State :: struct {
 	device: ^d3d12.IDevice5,
 	dxgi_factory: ^dxgi.IFactory7,
@@ -93,7 +98,7 @@ Pipeline :: struct {
 	shader: Shader_Handle,
 }
 
-@opaque
+@api_opaque
 Command_List :: struct {
 	swapchain: ^Swapchain,
 	pipeline: ^Pipeline,

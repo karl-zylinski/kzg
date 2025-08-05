@@ -10,6 +10,10 @@ import "core:odin/ast"
 import "core:strings"
 import "core:slice"
 
+pln :: fmt.fprintln
+pf :: fmt.fprintf
+pfln :: fmt.fprintfln
+
 main :: proc() {
 	arena: vmem.Arena
 	context.allocator = vmem.arena_allocator(&arena)
@@ -32,18 +36,15 @@ main :: proc() {
 
 		log.ensuref(plug_ast_ok, "Could not generate AST for package %v", fi.name)
 
-		a, a_err := os1.open(fmt.tprintf("%v/api.odin", out_dir), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
+		a, a_err := os1.open(fmt.tprintf("%v/api_%v.odin", out_dir, fi.name), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
 
 		check(a_err == nil, a_err)
 
-		base_api_file := fmt.tprintf("%v/api_types.odin", fi.name)
-		api_file, api_file_ok := os1.read_entire_file(base_api_file)
+		pfln(a, "package %v\n", plug_ast.name)
+		pfln(a, "import \"kzg:base\"")
+		pfln(a, "import hm \"kzg:base/handle_map\"")
 
-		if api_file_ok {
-			fmt.fprint(a, string(api_file))
-		} else {
-			fmt.fprintfln(a, "package %v", plug_ast.name)			
-		}
+		pfln(a, "")
 
 		API_Entry :: struct {
 			name: string,
@@ -54,8 +55,7 @@ main :: proc() {
 			entries: [dynamic]API_Entry,
 		}
 
-		opaque_types: [dynamic]string
-
+		types: [dynamic]string
 		apis: map[string]API
 
 		default_api_name := "API"//strings.to_ada_case(plug_ast.name)
@@ -90,7 +90,7 @@ main :: proc() {
 							case "api":
 								add_to_api = true
 								add_to_api_name = value
-							case "opaque":
+							case "api_opaque":
 								add_to_api = true
 								add_to_api_opaque = true
 							}
@@ -112,28 +112,35 @@ main :: proc() {
 						}
 
 						if add_to_api_opaque {
-							append(&opaque_types, name)
+							append(&types, fmt.tprintf("%v :: struct{{}}", name))
 						} else {
+							api_name := add_to_api_name
+
+							if api_name == "" {
+								api_name = default_api_name
+							}
+
+							api := &apis[api_name]
+
+							if api == nil {
+								apis[api_name] = API {}
+								api = &apis[api_name]
+							}
+
+							processed := false
+
 							for v in dd.values {
 								#partial switch vd in v.derived {
 								case ^ast.Proc_Lit:
 									type := f.src[vd.type.pos.offset:vd.type.end.offset]
-
-									api_name := add_to_api_name
-
-									if api_name == "" {
-										api_name = default_api_name
-									}
-
-									api := &apis[api_name]
-
-									if api == nil {
-										apis[api_name] = API {}
-										api = &apis[api_name]
-									}
-
 									append(&api.entries, API_Entry { name = name, type = type })
+									processed = true
 								}
+							}
+
+							if !processed {
+								type := f.src[dd.pos.offset:dd.end.offset]
+								append(&types, type)
 							}
 						}
 					}
@@ -141,26 +148,19 @@ main :: proc() {
 			}
 		}
 
-		pf :: fmt.fprintf
-		pfln :: fmt.fprintfln
-
-		for t in opaque_types {
-			pf(a, t)
-			pfln(a, " :: struct {{}}")
+		for t in types {
+			pln(a, t)
 		}
 
-		loader_filename := fmt.tprintf("%v/api_loader.odin", fi.name)
+		loader_filename := fmt.tprintf("%v/api_loader_%v.odin", fi.name, fi.name)
 		lo, loader_out_err := os1.open(loader_filename, os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644)
 
 		check(loader_out_err == nil, loader_out_err)
 
-		pfln(lo, "package %v", plug_ast.name)
-
-		pfln(lo, "")
-
-		pfln(lo, "import hm \"kzg:base/handle_map\"")
+		pfln(lo, "package %v\n", plug_ast.name)
 		pfln(lo, "import \"kzg:base\"")
-		
+		pfln(lo, "import hm \"kzg:base/handle_map\"")
+
 		pfln(a, "")
 
 		if len(apis) > 0 {
@@ -191,8 +191,6 @@ main :: proc() {
 			apis := strings.to_string(ab)
 			pfln(a, apis)
 
-			pfln(a, "")
-
 			pfln(lo, "")
 
 			pfln(lo, apis)
@@ -214,7 +212,7 @@ main :: proc() {
 				pfln(lo, "\tbase.register_api(%v, &a%v)", api.key, idx)
 			}
 
-			pf(lo, "}}")
+			pfln(lo, "}}")
 		}
 		
 		os1.close(a)
@@ -231,7 +229,7 @@ main :: proc() {
 				"odin",
 				"build",
 				fi.name,
-				"-custom-attribute=opaque",
+				"-custom-attribute=api_opaque",
 				"-custom-attribute=api",
 				"-build-mode:dll",
 				"-collection:kzg=..",
