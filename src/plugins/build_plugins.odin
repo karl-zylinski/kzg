@@ -41,6 +41,7 @@ main :: proc() {
 
 		check(a_err == nil, a_err)
 
+		pfln(a, "// This file is regenerated on each compile. Don't edit it and hope for your changes to stay.")
 		pfln(a, "package %v\n", plug_ast.name)
 		pfln(a, "import hm \"kzg:base/handle_map\"")
 
@@ -58,39 +59,12 @@ main :: proc() {
 
 		types: [dynamic]string
 		apis: map[string]API
-		splat_packages: [dynamic]string
 
 		default_api_name := "API"//strings.to_ada_case(plug_ast.name)
 
 		for _, &f in plug_ast.files {
 			for &d in f.decls {
 				#partial switch &dd in d.derived {
-				case ^ast.Import_Decl:
-					import_splat := false
-					for &a in dd.attributes {
-						for &e in a.elems {
-							name: string
-
-							#partial switch &ed in e.derived {
-							case ^ast.Field_Value:
-								if name_ident, name_ident_ok := ed.field.derived.(^ast.Ident); name_ident_ok {
-									name = name_ident.name
-								}
-							case ^ast.Ident:
-								name = ed.name
-							}
-
-							if name == "splat" {
-								import_splat = true
-							}
-						}
-					}
-
-					if import_splat && dd.fullpath == "\"kzg:base\"" {
-						pkg_path := "c:\\projects\\kzg\\src\\base"
-						append(&splat_packages, pkg_path)
-					}
-
 				case ^ast.Value_Decl:
 					add_to_api: bool
 					add_to_api_opaque: bool
@@ -179,6 +153,7 @@ main :: proc() {
 
 		check(loader_out_err == nil, loader_out_err)
 
+		pfln(lo, "// This file is regenerated on each compile. Don't edit it and hope for your changes to stay.")
 		pfln(lo, "package %v\n", plug_ast.name)
 		pfln(lo, "import \"kzg:base\"")
 		pfln(lo, "import hm \"kzg:base/handle_map\"")
@@ -253,14 +228,10 @@ main :: proc() {
 
 		splat_builder := strings.builder_make()
 
-		for sp in splat_packages {
-			pkg, pkg_ok := parser.parse_package_from_path(sp)
+		base_pkg, base_pkg_ok := parser.parse_package_from_path("../base")
 
-			if !pkg_ok {
-				continue
-			}
-
-			for _, &f in pkg.files {
+		if base_pkg_ok {
+			for _, &f in base_pkg.files {
 				for &d in f.decls {
 					#partial switch &dd in d.derived {
 					case ^ast.Value_Decl:
@@ -288,10 +259,11 @@ main :: proc() {
 		os1.close(a)
 		os1.close(lo)
 
-		as, as_err := os1.open(fmt.tprintf("%v/splat_%v.odin", out_dir, fi.name), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
+		as, as_err := os1.open(fmt.tprintf("%v/base_%v.odin", out_dir, fi.name), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
 
 		check(as_err == nil, as_err)
 
+		pln(as, "#+private package")
 		pfln(as, "package %v\n", plug_ast.name)
 		pfln(as, "import \"kzg:base\"")
 		pfln(as, "")
@@ -311,7 +283,6 @@ main :: proc() {
 				fi.name,
 				"-custom-attribute=api_opaque",
 				"-custom-attribute=api",
-				"-custom-attribute=splat",
 				"-build-mode:dll",
 				"-collection:kzg=..",
 				"-collection:plugins=../../plugins",

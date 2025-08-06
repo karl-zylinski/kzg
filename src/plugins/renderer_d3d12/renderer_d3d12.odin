@@ -14,7 +14,7 @@ import "vendor:directx/dxc"
 import d3d12 "vendor:directx/d3d12"
 import dxgi "vendor:directx/dxgi"
 
-@splat import "kzg:base"
+import "kzg:base"
 import hm "kzg:base/handle_map"
 
 NUM_RENDERTARGETS :: 2
