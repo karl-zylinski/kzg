@@ -5,12 +5,12 @@
 
 What exists:
 - Some Direct3D 12 code for drawing UI rects
-- A start of some kind of plugin system
+- Plugin system with hot reload (go into plugins folder and do `odin run .` to hot reload while program is running)
 
 Upcoming milestones:
-- Plugin system with hot reload
 - Direct3D 12 rendering for tools programming: Basics rects + text + UI controls
 - Some kind of simple interactive editor that can save / load data
+- A separate rendering thread or some kind of rendering happening as a job in a job system
 
 ## TODO
 
