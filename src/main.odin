@@ -5,12 +5,13 @@ import "core:fmt"
 import "core:log"
 import "core:mem"
 import rd3d "plugins:renderer_d3d12"
-import th "plugins:thingy"
+import "plugins:thingy"
 import "kzg:base"
 import win "core:sys/windows"
 import sa "core:container/small_array"
 import la "core:math/linalg"
 import "core:dynlib"
+
 
 Rect :: base.Rect
 Color :: base.Color
@@ -44,7 +45,7 @@ main :: proc() {
 	context.logger = log.create_console_logger()
 	base.api_storage = &api_storage
 	base.load_all_plugins()
-	test_api := base.get_api(th.API)
+	test_api := base.get_api(thingy.API)
 	test_api.hi()
 
 	when ODIN_DEBUG {

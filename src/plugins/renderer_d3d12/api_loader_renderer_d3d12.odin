@@ -28,7 +28,7 @@ API :: struct {
 	buffer_destroy: proc(s: ^State, h: Buffer_Handle),
 	buffer_map: proc(s: ^State, h: Buffer_Handle) -> rawptr,
 	buffer_unmap: proc(s: ^State, h: Buffer_Handle),
-	swapchain_size: proc(s: ^State, sh: Swapchain_Handle) -> base.Vec2i,
+	swapchain_size: proc(s: ^State, sh: Swapchain_Handle) -> Vec2i,
 }
 
 @export
@@ -62,3 +62,16 @@ kzg_plugin_loaded :: proc(api_storage: ^base.API_Storage) {
 
 	base.register_api(API, &a0)
 }
+
+Plugin :: base.Plugin
+API_Storage :: base.API_Storage
+load_plugin :: base.load_plugin
+load_all_plugins :: base.load_all_plugins
+refresh_all_plugins :: base.refresh_all_plugins
+register_api :: base.register_api
+get_api :: base.get_api
+Rect :: base.Rect
+Mat4 :: base.Mat4
+Vec3 :: base.Vec3
+Vec2i :: base.Vec2i
+Color :: base.Color

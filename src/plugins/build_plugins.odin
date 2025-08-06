@@ -13,6 +13,7 @@ import "core:slice"
 pln :: fmt.fprintln
 pf :: fmt.fprintf
 pfln :: fmt.fprintfln
+p :: fmt.fprint
 
 main :: proc() {
 	arena: vmem.Arena
@@ -41,7 +42,6 @@ main :: proc() {
 		check(a_err == nil, a_err)
 
 		pfln(a, "package %v\n", plug_ast.name)
-		pfln(a, "import \"kzg:base\"")
 		pfln(a, "import hm \"kzg:base/handle_map\"")
 
 		pfln(a, "")
@@ -58,12 +58,39 @@ main :: proc() {
 
 		types: [dynamic]string
 		apis: map[string]API
+		splat_packages: [dynamic]string
 
 		default_api_name := "API"//strings.to_ada_case(plug_ast.name)
 
 		for _, &f in plug_ast.files {
 			for &d in f.decls {
 				#partial switch &dd in d.derived {
+				case ^ast.Import_Decl:
+					import_splat := false
+					for &a in dd.attributes {
+						for &e in a.elems {
+							name: string
+
+							#partial switch &ed in e.derived {
+							case ^ast.Field_Value:
+								if name_ident, name_ident_ok := ed.field.derived.(^ast.Ident); name_ident_ok {
+									name = name_ident.name
+								}
+							case ^ast.Ident:
+								name = ed.name
+							}
+
+							if name == "splat" {
+								import_splat = true
+							}
+						}
+					}
+
+					if import_splat && dd.fullpath == "\"kzg:base\"" {
+						pkg_path := "c:\\projects\\kzg\\src\\base"
+						append(&splat_packages, pkg_path)
+					}
+
 				case ^ast.Value_Decl:
 					add_to_api: bool
 					add_to_api_opaque: bool
@@ -220,9 +247,56 @@ main :: proc() {
 
 			pfln(lo, "}}")
 		}
+
+		pfln(lo, "")
+		pfln(a, "")
+
+		splat_builder := strings.builder_make()
+
+		for sp in splat_packages {
+			pkg, pkg_ok := parser.parse_package_from_path(sp)
+
+			if !pkg_ok {
+				continue
+			}
+
+			for _, &f in pkg.files {
+				for &d in f.decls {
+					#partial switch &dd in d.derived {
+					case ^ast.Value_Decl:
+						if dd.is_mutable {
+							continue
+						}
+
+						for n in dd.names {
+							ident, ident_ok := n.derived.(^ast.Ident)
+
+							if ident_ok {
+								strings.write_string(&splat_builder, ident.name)
+								strings.write_string(&splat_builder, " :: base.")
+								strings.write_string(&splat_builder, ident.name)
+								strings.write_string(&splat_builder, "\n")
+							}
+						}
+					}
+				}
+			}
+		}
+
+		p(lo, strings.to_string(splat_builder))
 		
 		os1.close(a)
 		os1.close(lo)
+
+		as, as_err := os1.open(fmt.tprintf("%v/splat_%v.odin", out_dir, fi.name), os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644) 
+
+		check(as_err == nil, as_err)
+
+		pfln(as, "package %v\n", plug_ast.name)
+		pfln(as, "import \"kzg:base\"")
+		pfln(as, "")
+		p(as, strings.to_string(splat_builder))
+		os1.close(as)
 	}
 
 	for fi in file_infos {
@@ -237,6 +311,7 @@ main :: proc() {
 				fi.name,
 				"-custom-attribute=api_opaque",
 				"-custom-attribute=api",
+				"-custom-attribute=splat",
 				"-build-mode:dll",
 				"-collection:kzg=..",
 				"-collection:plugins=../../plugins",

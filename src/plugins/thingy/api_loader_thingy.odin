@@ -17,3 +17,4 @@ kzg_plugin_loaded :: proc(api_storage: ^base.API_Storage) {
 
 	base.register_api(API, &a0)
 }
+

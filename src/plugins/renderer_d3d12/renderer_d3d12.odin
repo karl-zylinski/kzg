@@ -14,12 +14,10 @@ import "vendor:directx/dxc"
 import d3d12 "vendor:directx/d3d12"
 import dxgi "vendor:directx/dxgi"
 
-import "kzg:base"
+@splat import "kzg:base"
 import hm "kzg:base/handle_map"
 
 NUM_RENDERTARGETS :: 2
-
-Vec3 :: base.Vec3
 
 g_info_queue: ^d3d12.IInfoQueue
 
@@ -957,7 +955,7 @@ buffer_unmap :: proc(s: ^State, h: Buffer_Handle) {
 }
 
 @api
-swapchain_size :: proc(s: ^State, sh: Swapchain_Handle) -> base.Vec2i {
+swapchain_size :: proc(s: ^State, sh: Swapchain_Handle) -> Vec2i {
 	swap := hm.get(&s.swapchains, sh)
 
 	if swap == nil {
