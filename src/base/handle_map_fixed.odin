@@ -46,7 +46,7 @@ Example (assumes this package is imported under the alias `hm`):
 		e.pos += { 5, 1 }
 	}
 */
-package handle_map_fixed
+package kzg_base
 
 import "base:intrinsics"
 
@@ -92,7 +92,7 @@ Handle_Map :: struct($T: typeid, $HT: typeid, $N: int) {
 
 // Clears the handle map using `mem_zero`. It doesn't do `m^ = {}` because that
 // may blow the stack for a handle map with very big `N`
-clear :: proc(m: ^Handle_Map($T, $HT, $N)) {
+hm_clear :: proc(m: ^Handle_Map($T, $HT, $N)) {
 	intrinsics.mem_zero(m, size_of(m^))
 }
 
@@ -102,7 +102,7 @@ clear :: proc(m: ^Handle_Map($T, $HT, $N)) {
 // Will reuse the item at `next_unused` if that value is non-zero.
 //
 // Second return value is `false` if the handle-based map is full.
-add :: proc(m: ^Handle_Map($T, $HT, $N), v: T) -> (HT, bool) #optional_ok {
+hm_add :: proc(m: ^Handle_Map($T, $HT, $N), v: T) -> (HT, bool) #optional_ok {
 	v := v
 
 	if m.next_unused != 0 {
@@ -140,7 +140,7 @@ add :: proc(m: ^Handle_Map($T, $HT, $N), v: T) -> (HT, bool) #optional_ok {
 // permanently. The item may get reused if any part of your program destroys and
 // reuses that slot. Only store handles permanently and temporarily resolve them
 // into pointers as needed.
-get :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) -> ^T {
+hm_get :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) -> ^T {
 	if h.idx <= 0 || h.idx >= m.num_items {
 		return nil
 	}
@@ -156,7 +156,7 @@ get :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) -> ^T {
 // to this proc. The item is not really destroyed, rather its index is just
 // set on `m.next_unused`. Also, the item's `handle.idx` is set to zero, this
 // is used by the `iter` proc in order to skip that item when iterating.
-remove :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) {
+hm_remove :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) {
 	if h.idx <= 0 || h.idx >= m.num_items {
 		return
 	}
@@ -171,17 +171,17 @@ remove :: proc(m: ^Handle_Map($T, $HT, $N), h: HT) {
 
 // Tells you if a handle maps to a valid item. This is done by checking if the
 // handle on the item is the same as the passed handle.
-valid :: proc(m: Handle_Map($T, $HT, $N), h: HT) -> bool {
+hm_valid :: proc(m: Handle_Map($T, $HT, $N), h: HT) -> bool {
 	return h.idx > 0 && h.idx < m.num_items && m.items[h.idx].handle == h
 }
 
 // Tells you how many valid items there are in the handle map.
-num_used :: proc(m: Handle_Map($T, $HT, $N)) -> int {
+hm_num_used :: proc(m: Handle_Map($T, $HT, $N)) -> int {
 	return int(m.num_items - m.num_unused)
 }
 
 // The maximum number of items the handle map can contain.
-cap :: proc(m: Handle_Map($T, $HT, $N)) -> int {
+hm_cap :: proc(m: Handle_Map($T, $HT, $N)) -> int {
 	return N
 }
 
@@ -192,7 +192,7 @@ Handle_Map_Iterator :: struct($T: typeid, $HT: typeid, $N: int) {
 }
 
 // Create an iterator. Use with `iter` to do the actual iteration.
-make_iter :: proc(m: ^Handle_Map($T, $HT, $N)) -> Handle_Map_Iterator(T, HT, N) {
+hm_make_iter :: proc(m: ^Handle_Map($T, $HT, $N)) -> Handle_Map_Iterator(T, HT, N) {
 	return { m = m, index = 1 }
 }
 
@@ -205,7 +205,7 @@ make_iter :: proc(m: ^Handle_Map($T, $HT, $N)) -> Handle_Map_Iterator(T, HT, N) 
 // 
 // Instead of using an iterator you can also loop over `items` and check if
 // `item.handle.idx == 0` and in that case skip that item.
-iter :: proc(it: ^Handle_Map_Iterator($T, $HT, $N)) -> (val: ^T, h: HT, cond: bool) {
+hm_iter :: proc(it: ^Handle_Map_Iterator($T, $HT, $N)) -> (val: ^T, h: HT, cond: bool) {
 	for _ in it.index..<it.m.num_items {
 		item := &it.m.items[it.index]
 		idx := it.index

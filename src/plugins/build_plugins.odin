@@ -43,9 +43,6 @@ main :: proc() {
 
 		pfln(a, "// This file is regenerated on each compile. Don't edit it and hope for your changes to stay.")
 		pfln(a, "package %v\n", plug_ast.name)
-		pfln(a, "import hm \"kzg:base/handle_map\"")
-
-		pfln(a, "")
 
 		API_Entry :: struct {
 			name: string,
@@ -144,8 +141,12 @@ main :: proc() {
 			}
 		}
 
-		for t in types {
-			pln(a, t)
+		if len(types) > 0 {
+			for t in types {
+				pln(a, t)
+			}
+
+			pfln(a, "")
 		}
 
 		loader_filename := fmt.tprintf("%v/api_loader_%v.odin", fi.name, fi.name)
@@ -156,9 +157,6 @@ main :: proc() {
 		pfln(lo, "// This file is regenerated on each compile. Don't edit it and hope for your changes to stay.")
 		pfln(lo, "package %v\n", plug_ast.name)
 		pfln(lo, "import \"kzg:base\"")
-		pfln(lo, "import hm \"kzg:base/handle_map\"")
-
-		pfln(a, "")
 
 		if len(apis) > 0 {
 			apis_sorted, _ := slice.map_entries(apis)
@@ -206,7 +204,7 @@ main :: proc() {
 			pfln(lo, "")
 
 			pfln(lo, "@export\nkzg_plugin_loaded :: proc(api_storage: ^base.API_Storage) {{")
-			pfln(lo, "\tbase.api_storage = api_storage\n")
+			pfln(lo, "\tplugin_system_init(api_storage)\n")
 				
 			for api, idx in apis_sorted {
 				pfln(lo, "\ta%v := %v {{", idx, api.key)
@@ -217,14 +215,11 @@ main :: proc() {
 
 				pfln(lo, "\t}}\n")
 
-				pfln(lo, "\tbase.register_api(%v, &a%v)", api.key, idx)
+				pfln(lo, "\tregister_api(%v, &a%v)", api.key, idx)
 			}
 
 			pfln(lo, "}}")
 		}
-
-		pfln(lo, "")
-		pfln(a, "")
 
 		splat_builder := strings.builder_make()
 
@@ -232,11 +227,31 @@ main :: proc() {
 
 		if base_pkg_ok {
 			for _, &f in base_pkg.files {
-				for &d in f.decls {
+				decl_loop: for &d in f.decls {
 					#partial switch &dd in d.derived {
 					case ^ast.Value_Decl:
 						if dd.is_mutable {
 							continue
+						}
+
+						for &a in dd.attributes {
+							for &e in a.elems {
+								name: string
+
+								#partial switch &ed in e.derived {
+								case ^ast.Field_Value:
+									if name_ident, name_ident_ok := ed.field.derived.(^ast.Ident); name_ident_ok {
+										name = name_ident.name
+									}
+								case ^ast.Ident:
+									name = ed.name
+								}
+
+
+								if name == "private" {
+									continue decl_loop
+								}
+							}
 						}
 
 						for n in dd.names {
@@ -254,6 +269,7 @@ main :: proc() {
 			}
 		}
 
+		pfln(lo, "")
 		p(lo, strings.to_string(splat_builder))
 		
 		os1.close(a)

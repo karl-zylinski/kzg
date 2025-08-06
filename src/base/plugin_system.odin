@@ -23,9 +23,15 @@ API_Storage :: struct {
 	api_lookup: map[typeid]rawptr,
 }
 
+@private
 api_storage: ^API_Storage
 
-load_plugin :: proc(p: ^Plugin) -> bool {
+plugin_system_init :: proc(storage: ^API_Storage) {
+	assert(api_storage == nil, "Already initialized")
+	api_storage = storage
+}
+
+plugin_system_load :: proc(p: ^Plugin) -> bool {
 	COPIED_PLUGINS_DIR :: "plugins/runtime_copies"
 	os2.make_directory(COPIED_PLUGINS_DIR)
 	copy_path := fmt.tprintf("%v/%v_%v.dll", COPIED_PLUGINS_DIR, filepath.stem(p.lib_path), p.version)
@@ -51,7 +57,7 @@ load_plugin :: proc(p: ^Plugin) -> bool {
 	return false
 }
 
-load_all_plugins :: proc() {
+plugin_system_load_all :: proc() {
 	assert(api_storage != nil)
 	plugin_folders, plugin_folders_err := os2.read_all_directory_by_path("plugins", context.temp_allocator)
 
@@ -72,7 +78,7 @@ load_all_plugins :: proc() {
 
 				mod_time, mod_time_err := os2.modification_time_by_path(p.lib_path)
 
-				if mod_time_err == nil && load_plugin(&p) {
+				if mod_time_err == nil && plugin_system_load(&p) {
 					p.lib_path = strings.clone(pff.fullpath)
 					p.lib_modified_time = mod_time
 					append(&api_storage.plugins, p)
@@ -82,7 +88,7 @@ load_all_plugins :: proc() {
 	}
 }
 
-refresh_all_plugins :: proc() {
+plugin_system_refresh :: proc() {
 	assert(api_storage != nil)
 
 	for &p in api_storage.plugins {
@@ -93,13 +99,16 @@ refresh_all_plugins :: proc() {
 		}
 
 		if time.diff(p.lib_modified_time, modified_time) > 0 {
-			load_plugin(&p)
+			plugin_system_load(&p)
 			p.lib_modified_time = modified_time
 		}
 	}
 }
 
-register_api :: proc(type: typeid, api: rawptr) {
+register_api :: plugin_system_register_api
+
+plugin_system_register_api :: proc(type: typeid, api: rawptr) {
+	assert(api_storage != nil)
 	existing := api_storage.api_lookup[type]
 
 	if existing != nil {
@@ -107,15 +116,16 @@ register_api :: proc(type: typeid, api: rawptr) {
 		mem.copy(existing, api, sz)
 		return
 	}
-
-	assert(api_storage != nil)
+	
 	sz := reflect.size_of_typeid(type)
 	api_struct, api_struct_err := mem.alloc(sz)
 	mem.copy(api_struct, api, sz)
 	api_storage.api_lookup[type] = api_struct
 }
 
-get_api :: proc($T: typeid) -> ^T {
+get_api :: plugin_system_get_api
+
+plugin_system_get_api :: proc($T: typeid) -> ^T {
 	assert(api_storage != nil)
 	return (^T)(api_storage.api_lookup[T])
 }

@@ -2,7 +2,6 @@
 package renderer_d3d12
 
 import "kzg:base"
-import hm "kzg:base/handle_map"
 
 API :: struct {
 	create: proc(allocator := context.allocator, loc := #caller_location) -> ^State,
@@ -34,7 +33,7 @@ API :: struct {
 
 @export
 kzg_plugin_loaded :: proc(api_storage: ^base.API_Storage) {
-	base.api_storage = api_storage
+	plugin_system_init(api_storage)
 
 	a0 := API {
 		create = create,
@@ -61,7 +60,7 @@ kzg_plugin_loaded :: proc(api_storage: ^base.API_Storage) {
 		swapchain_size = swapchain_size,
 	}
 
-	base.register_api(API, &a0)
+	register_api(API, &a0)
 }
 
 Rect :: base.Rect
@@ -71,8 +70,23 @@ Vec2i :: base.Vec2i
 Color :: base.Color
 Plugin :: base.Plugin
 API_Storage :: base.API_Storage
-load_plugin :: base.load_plugin
-load_all_plugins :: base.load_all_plugins
-refresh_all_plugins :: base.refresh_all_plugins
+plugin_system_init :: base.plugin_system_init
+plugin_system_load :: base.plugin_system_load
+plugin_system_load_all :: base.plugin_system_load_all
+plugin_system_refresh :: base.plugin_system_refresh
 register_api :: base.register_api
+plugin_system_register_api :: base.plugin_system_register_api
 get_api :: base.get_api
+plugin_system_get_api :: base.plugin_system_get_api
+Handle :: base.Handle
+Handle_Map :: base.Handle_Map
+hm_clear :: base.hm_clear
+hm_add :: base.hm_add
+hm_get :: base.hm_get
+hm_remove :: base.hm_remove
+hm_valid :: base.hm_valid
+hm_num_used :: base.hm_num_used
+hm_cap :: base.hm_cap
+Handle_Map_Iterator :: base.Handle_Map_Iterator
+hm_make_iter :: base.hm_make_iter
+hm_iter :: base.hm_iter

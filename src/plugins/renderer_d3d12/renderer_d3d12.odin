@@ -14,17 +14,14 @@ import "vendor:directx/dxc"
 import d3d12 "vendor:directx/d3d12"
 import dxgi "vendor:directx/dxgi"
 
-import "kzg:base"
-import hm "kzg:base/handle_map"
-
 NUM_RENDERTARGETS :: 2
 
 g_info_queue: ^d3d12.IInfoQueue
 
-@api Shader_Handle :: distinct hm.Handle
-@api Buffer_Handle :: distinct hm.Handle
-@api Swapchain_Handle :: distinct hm.Handle
-@api Pipeline_Handle :: distinct hm.Handle
+@api Shader_Handle :: distinct Handle
+@api Buffer_Handle :: distinct Handle
+@api Swapchain_Handle :: distinct Handle
+@api Pipeline_Handle :: distinct Handle
 
 @api_opaque
 State :: struct {
@@ -37,10 +34,10 @@ State :: struct {
 	dxc_library: ^dxc.ILibrary,
 	dxc_compiler: ^dxc.ICompiler3,
 
-	buffers: hm.Handle_Map(Buffer, Buffer_Handle, 1024),
-	shaders: hm.Handle_Map(Shader, Shader_Handle, 1024),
-	swapchains: hm.Handle_Map(Swapchain, Swapchain_Handle, 16),
-	pipelines: hm.Handle_Map(Pipeline, Pipeline_Handle, 128),
+	buffers: Handle_Map(Buffer, Buffer_Handle, 1024),
+	shaders: Handle_Map(Shader, Shader_Handle, 1024),
+	swapchains: Handle_Map(Swapchain, Swapchain_Handle, 16),
+	pipelines: Handle_Map(Pipeline, Pipeline_Handle, 128),
 }
 
 Buffer :: struct {
@@ -313,12 +310,12 @@ create_swapchain :: proc(s: ^State, hwnd: u64, width: int, height: int) -> Swapc
 		}
 	}
 
-	return hm.add(&s.swapchains, swap)
+	return hm_add(&s.swapchains, swap)
 }
 
 @api
 destroy_swapchain :: proc(s: ^State, sh: Swapchain_Handle) {
-	swap := hm.get(&s.swapchains, sh)
+	swap := hm_get(&s.swapchains, sh)
 
 	if swap == nil {
 		return
@@ -342,7 +339,7 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline_Han
 		shader = shader_handle,
 	}
 
-	shader := hm.get(&s.shaders, shader_handle)
+	shader := hm_get(&s.shaders, shader_handle)
 	assert(s != nil)
 	
 	{
@@ -469,12 +466,12 @@ create_pipeline :: proc(s: ^State, shader_handle: Shader_Handle) -> Pipeline_Han
 		check(hr, "Failed creating D3D12 command queue")
 	}
 	
-	return hm.add(&s.pipelines, pip)
+	return hm_add(&s.pipelines, pip)
 }
 
 @api
 destroy_pipeline :: proc(rs: ^State, ph: Pipeline_Handle) {
-	pip := hm.get(&rs.pipelines, ph)
+	pip := hm_get(&rs.pipelines, ph)
 
 	if pip == nil {
 		return
@@ -487,7 +484,7 @@ destroy_pipeline :: proc(rs: ^State, ph: Pipeline_Handle) {
 
 @api
 flush :: proc(s: ^State, sh: Swapchain_Handle) {
-	swap := hm.get(&s.swapchains, sh)
+	swap := hm_get(&s.swapchains, sh)
 
 	if swap == nil {
 		return
@@ -511,7 +508,7 @@ wait_for_fence :: proc(s: ^State, fence: ^Fence) {
 
 @api
 begin_frame :: proc(s: ^State, sh: Swapchain_Handle) {
-	swap := hm.get(&s.swapchains, sh)
+	swap := hm_get(&s.swapchains, sh)
 
 	if swap == nil {
 		return
@@ -525,7 +522,7 @@ begin_frame :: proc(s: ^State, sh: Swapchain_Handle) {
 
 @api
 draw :: proc(s: ^State, cmd: ^Command_List, index_buffer: Buffer_Handle, n: int) {
-	ib := hm.get(&s.buffers, index_buffer)
+	ib := hm_get(&s.buffers, index_buffer)
 
 	if ib == nil {
 		return
@@ -544,9 +541,9 @@ draw :: proc(s: ^State, cmd: ^Command_List, index_buffer: Buffer_Handle, n: int)
 
 @api
 create_command_list :: proc(s: ^State, ph: Pipeline_Handle, sh: Swapchain_Handle) -> ^Command_List {
-	pip := hm.get(&s.pipelines, ph)
+	pip := hm_get(&s.pipelines, ph)
 
-	swap := hm.get(&s.swapchains, sh)
+	swap := hm_get(&s.swapchains, sh)
 
 	if pip == nil || swap == nil {
 		return nil
@@ -575,14 +572,14 @@ destroy_command_list :: proc(rs: ^State, cmd: ^Command_List) {
 
 @api
 set_buffer :: proc(rs: ^State, ph: Pipeline_Handle, name: string, h: Buffer_Handle) {
-	p := hm.get(&rs.pipelines, ph)
+	p := hm_get(&rs.pipelines, ph)
 
 	if p == nil {
 		return
 	}
 
-	shader := hm.get(&p.renderer.shaders, p.shader)
-	buf := hm.get(&p.renderer.buffers, h)
+	shader := hm_get(&p.renderer.shaders, p.shader)
+	buf := hm_get(&p.renderer.buffers, h)
 
 	if shader == nil || buf == nil {
 		return
@@ -708,7 +705,7 @@ execute_command_list :: proc(s: ^State, cmd: ^Command_List) {
 
 @api
 present :: proc(s: ^State, sh: Swapchain_Handle) {
-	swap := hm.get(&s.swapchains, sh)
+	swap := hm_get(&s.swapchains, sh)
 
 	if swap == nil {
 		return
@@ -878,12 +875,12 @@ resources within the shader. */
 
 	shader.resources = resources
 
-	return hm.add(&s.shaders, shader)
+	return hm_add(&s.shaders, shader)
 }
 
 @api
 shader_destroy :: proc(s: ^State, h: Shader_Handle) {
-	shader := hm.get(&s.shaders, h)
+	shader := hm_get(&s.shaders, h)
 
 	if shader == nil {
 		return
@@ -925,19 +922,19 @@ buffer_create :: proc(s: ^State, num_elements: int, element_size: int) -> Buffer
 		num_elements = num_elements,
 	}
 
-	return hm.add(&s.buffers, b)
+	return hm_add(&s.buffers, b)
 }
 
 @api
 buffer_destroy :: proc(s: ^State, h: Buffer_Handle) {
-	if b := hm.get(&s.buffers, h); b != nil {
+	if b := hm_get(&s.buffers, h); b != nil {
 		b.buf->Release()
 	}
 }
 
 @api
 buffer_map :: proc(s: ^State, h: Buffer_Handle) -> rawptr {
-	if b := hm.get(&s.buffers, h); b != nil {
+	if b := hm_get(&s.buffers, h); b != nil {
 		map_start: rawptr
 		hr := b.buf->Map(0, &d3d12.RANGE{}, &map_start)
 		check(hr, "Failed mapping buffer")
@@ -949,14 +946,14 @@ buffer_map :: proc(s: ^State, h: Buffer_Handle) -> rawptr {
 
 @api
 buffer_unmap :: proc(s: ^State, h: Buffer_Handle) {
-	if b := hm.get(&s.buffers, h); b != nil {
+	if b := hm_get(&s.buffers, h); b != nil {
 		b.buf->Unmap(0, nil)
 	}
 }
 
 @api
 swapchain_size :: proc(s: ^State, sh: Swapchain_Handle) -> Vec2i {
-	swap := hm.get(&s.swapchains, sh)
+	swap := hm_get(&s.swapchains, sh)
 
 	if swap == nil {
 		return {}

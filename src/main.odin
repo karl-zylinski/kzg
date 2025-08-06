@@ -43,8 +43,8 @@ create_api_instance :: proc($Api_Type: typeid, $State_Type: typeid, allocator :=
 
 main :: proc() {
 	context.logger = log.create_console_logger()
-	base.api_storage = &api_storage
-	base.load_all_plugins()
+	base.plugin_system_init(&api_storage)
+	base.plugin_system_load_all()
 	test_api := base.get_api(thingy.API)
 	test_api.hi()
 
@@ -108,7 +108,7 @@ main :: proc() {
 	msg: win.MSG
 
 	for run {
-		base.refresh_all_plugins()
+		base.plugin_system_refresh()
 		
 		for win.PeekMessageW(&msg, nil, 0, 0, win.PM_REMOVE) {
 			win.TranslateMessage(&msg)
