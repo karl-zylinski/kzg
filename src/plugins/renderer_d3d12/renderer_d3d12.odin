@@ -751,9 +751,9 @@ resources within the shader. */
 	dxc_vs_args := make([dynamic]dxc.wstring, context.temp_allocator)
 
 	when ODIN_DEBUG {
-		append(&dxc_vs_args, win.L(dxc.ARG_DEBUG))
-		append(&dxc_vs_args, win.L("-EVSMain"))
-		append(&dxc_vs_args, win.L("-Tvs_6_2"))
+		append(&dxc_vs_args, dxc.ARG_DEBUG)
+		append(&dxc_vs_args, "-EVSMain")
+		append(&dxc_vs_args, "-Tvs_6_2")
 	}
 
 	vs_res: ^dxc.IResult
@@ -779,9 +779,9 @@ resources within the shader. */
 	dxc_ps_args := make([dynamic]dxc.wstring, context.temp_allocator)
 
 	when ODIN_DEBUG {
-		append(&dxc_ps_args, win.L(dxc.ARG_DEBUG))
-		append(&dxc_ps_args, win.L("-EPSMain"))
-		append(&dxc_ps_args, win.L("-Tps_6_2"))
+		append(&dxc_ps_args, dxc.ARG_DEBUG)
+		append(&dxc_ps_args, "-EPSMain")
+		append(&dxc_ps_args, "-Tps_6_2")
 	}
 
 	ps_res: ^dxc.IResult

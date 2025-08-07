@@ -149,7 +149,7 @@ main :: proc() {
 			pfln(a, "")
 		}
 
-		loader_filename := fmt.tprintf("%v/api_loader_%v.odin", fi.name, fi.name)
+		loader_filename := fmt.tprintf("%v/gen__%v.odin", fi.name, fi.name)
 		lo, loader_out_err := os1.open(loader_filename, os1.O_WRONLY | os1.O_CREATE | os1.O_TRUNC, 0o644)
 
 		check(loader_out_err == nil, loader_out_err)

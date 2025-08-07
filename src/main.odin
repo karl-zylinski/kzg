@@ -65,12 +65,12 @@ main :: proc() {
 	custom_context = context
 	instance := win.HINSTANCE(win.GetModuleHandleW(nil))
 	assert(instance != nil, "win: Failed fetching current instance")
-	class_name := win.L("KZG")
+	CLASS_NAME :: "KZG"
 	hr: win.HRESULT
 
 	cls := win.WNDCLASSW {
 		lpfnWndProc = window_proc,
-		lpszClassName = class_name,
+		lpszClassName = CLASS_NAME,
 		hInstance = instance,
 		hCursor = win.LoadCursorA(nil, win.IDC_ARROW)
 	}
@@ -81,7 +81,7 @@ main :: proc() {
 	DEFAULT_WINDOW_WIDTH :: 1280
 	DEFAULT_WINDOW_HEIGHT :: 720
 
-	hwnd := win.CreateWindowW(class_name,
+	hwnd := win.CreateWindowW(CLASS_NAME,
 		win.L("KZG"),
 		win.WS_OVERLAPPEDWINDOW | win.WS_VISIBLE,
 		100, 100, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT,
