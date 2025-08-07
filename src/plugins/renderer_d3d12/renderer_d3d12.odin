@@ -933,12 +933,12 @@ buffer_destroy :: proc(s: ^State, h: Buffer_Handle) {
 }
 
 @api
-buffer_map :: proc(s: ^State, h: Buffer_Handle) -> rawptr {
+buffer_map :: proc(s: ^State, h: Buffer_Handle) -> []u8 {
 	if b := hm_get(&s.buffers, h); b != nil {
 		map_start: rawptr
 		hr := b.buf->Map(0, &d3d12.RANGE{}, &map_start)
 		check(hr, "Failed mapping buffer")
-		return map_start
+		return slice.bytes_from_ptr(map_start, b.element_size * b.num_elements)
 	}
 
 	return nil
